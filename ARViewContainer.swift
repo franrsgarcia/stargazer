@@ -1,0 +1,61 @@
+import SwiftUI
+import Combine
+import RealityKit
+import ARKit
+
+struct ARViewContainer: UIViewRepresentable {
+    @EnvironmentObject private var model: StargazerModel
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(model: model)
+    }
+
+    func makeUIView(context: Context) -> ARView {
+        let arView = ARView(frame: .zero)
+        arView.automaticallyConfigureSession = false
+
+        guard ARWorldTrackingConfiguration.isSupported else {
+            return arView
+        }
+
+        let configuration = ARWorldTrackingConfiguration()
+        configuration.worldAlignment = .gravityAndHeading
+        configuration.environmentTexturing = .none
+        configuration.planeDetection = []
+
+        arView.session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
+        context.coordinator.install(on: arView)
+        return arView
+    }
+
+    func updateUIView(_ uiView: ARView, context: Context) {
+        // Nothing to update from SwiftUI state directly.
+    }
+
+    static func dismantleUIView(_ uiView: ARView, coordinator: Coordinator) {
+        coordinator.stopObserving()
+        uiView.session.pause()
+    }
+
+    class Coordinator {
+        private let model: StargazerModel
+        private var subscription: Cancellable?
+
+        init(model: StargazerModel) {
+            self.model = model
+        }
+
+        func install(on arView: ARView) {
+            subscription = arView.scene.subscribe(to: SceneEvents.Update.self) { [weak self, weak arView] _ in
+                guard let self = self, let arView = arView, let frame = arView.session.currentFrame else { return }
+                let viewSize = arView.bounds.size
+                self.model.updateOverlays(from: frame, viewportSize: viewSize)
+            }
+        }
+
+        func stopObserving() {
+            subscription?.cancel()
+            subscription = nil
+        }
+    }
+}

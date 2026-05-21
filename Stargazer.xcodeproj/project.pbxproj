@@ -1,0 +1,231 @@
+// !$*UTF8*$!
+{
+  archiveVersion = 1;
+  classes = {};
+  objectVersion = 56;
+  objects = {
+    000000000000000000000001 /* Project object */ = {
+      isa = PBXProject;
+      attributes = {
+        LastUpgradeCheck = 1430;
+        ORGANIZATIONNAME = "Stargazer";
+        TargetAttributes = {
+          000000000000000000000006 = {
+            CreatedOnToolsVersion = 1430;
+          };
+        };
+      };
+      buildConfigurationList = 000000000000000000000002 /* Build configuration list for PBXProject */;
+      compatibilityVersion = "Xcode 14.0";
+      developmentRegion = en;
+      hasScannedForEncodings = 0;
+      knownRegions = (
+        en,
+      );
+      mainGroup = 000000000000000000000005;
+      productRefGroup = 000000000000000000000004 /* Products */;
+      projectDirPath = "";
+      projectRoot = "";
+      targets = (
+        000000000000000000000006 /* Stargazer */,
+      );
+    };
+    000000000000000000000002 /* Build configuration list for PBXProject */ = {
+      isa = XCConfigurationList;
+      buildConfigurations = (
+        000000000000000000000007 /* Debug */,
+        000000000000000000000008 /* Release */,
+      );
+      defaultConfigurationIsVisible = 0;
+      defaultConfigurationName = Release;
+    };
+    000000000000000000000003 /* Build configuration list for PBXNativeTarget "Stargazer" */ = {
+      isa = XCConfigurationList;
+      buildConfigurations = (
+        000000000000000000000009 /* Debug */,
+        00000000000000000000000A /* Release */,
+      );
+      defaultConfigurationIsVisible = 0;
+      defaultConfigurationName = Release;
+    };
+    000000000000000000000004 /* Products */ = {
+      isa = PBXGroup;
+      children = (
+        000000000000000000000011 /* Stargazer.app */,
+      );
+      name = Products;
+      sourceTree = "<group>";
+    };
+    000000000000000000000005 /* Project root group */ = {
+      isa = PBXGroup;
+      children = (
+        000000000000000000000012 /* StargazerApp.swift */,
+        000000000000000000000013 /* ContentView.swift */,
+        000000000000000000000014 /* ARViewContainer.swift */,
+        000000000000000000000015 /* LocationManager.swift */,
+        000000000000000000000016 /* CelestialBody.swift */,
+        000000000000000000000017 /* CelestialCalculator.swift */,
+        000000000000000000000018 /* Info.plist */,
+      );
+      sourceTree = "<group>";
+    };
+    000000000000000000000006 /* Stargazer */ = {
+      isa = PBXNativeTarget;
+      buildConfigurationList = 000000000000000000000003;
+      buildPhases = (
+        00000000000000000000001B /* Sources */,
+        00000000000000000000001C /* Resources */,
+      );
+      buildRules = (
+      );
+      dependencies = (
+      );
+      name = Stargazer;
+      productName = Stargazer;
+      productReference = 000000000000000000000011 /* Stargazer.app */;
+      productType = "com.apple.product-type.application";
+    };
+    000000000000000000000009 /* Debug */ = {
+      isa = XCBuildConfiguration;
+      buildSettings = {
+        ALWAYS_SEARCH_USER_PATHS = NO;
+        CLANG_ENABLE_MODULES = YES;
+        DEBUG_INFORMATION_FORMAT = dwarf;
+        ENABLE_NS_ASSERTIONS = YES;
+        ENABLE_TESTABILITY = YES;
+        GCC_OPTIMIZATION_LEVEL = 0;
+        IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+        MTL_ENABLE_DEBUG_INFO = NO;
+        PRODUCT_BUNDLE_IDENTIFIER = com.example.Stargazer;
+        PRODUCT_NAME = "$(TARGET_NAME)";
+        SWIFT_VERSION = 5.0;
+        SUPPORTS_MACCATALYST = NO;
+        TARGETED_DEVICE_FAMILY = "1,2";
+      };
+      name = Debug;
+    };
+    00000000000000000000000A /* Release */ = {
+      isa = XCBuildConfiguration;
+      buildSettings = {
+        ALWAYS_SEARCH_USER_PATHS = NO;
+        CLANG_ENABLE_MODULES = YES;
+        DEBUG_INFORMATION_FORMAT = dwarf;
+        ENABLE_NS_ASSERTIONS = NO;
+        GCC_OPTIMIZATION_LEVEL = 3;
+        IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+        MTL_ENABLE_DEBUG_INFO = NO;
+        PRODUCT_BUNDLE_IDENTIFIER = com.example.Stargazer;
+        PRODUCT_NAME = "$(TARGET_NAME)";
+        SWIFT_VERSION = 5.0;
+        SUPPORTS_MACCATALYST = NO;
+        TARGETED_DEVICE_FAMILY = "1,2";
+      };
+      name = Release;
+    };
+    000000000000000000000011 /* Stargazer.app */ = {
+      isa = PBXFileReference;
+      explicitFileType = "wrapper.application";
+      includeInIndex = 0;
+      path = Stargazer.app;
+      sourceTree = BUILT_PRODUCTS_DIR;
+    };
+    00000000000000000000001B /* Sources */ = {
+      isa = PBXSourcesBuildPhase;
+      buildActionMask = 2147483647;
+      files = (
+        00000000000000000000001F /* StargazerApp.swift in Sources */,
+        000000000000000000000020 /* ContentView.swift in Sources */,
+        000000000000000000000021 /* ARViewContainer.swift in Sources */,
+        000000000000000000000022 /* LocationManager.swift in Sources */,
+        000000000000000000000023 /* CelestialBody.swift in Sources */,
+        000000000000000000000024 /* CelestialCalculator.swift in Sources */,
+      );
+      runOnlyForDeploymentPostprocessing = 0;
+    };
+    00000000000000000000001C /* Resources */ = {
+      isa = PBXResourcesBuildPhase;
+      buildActionMask = 2147483647;
+      files = (
+        000000000000000000000025 /* Info.plist in Resources */,
+      );
+      runOnlyForDeploymentPostprocessing = 0;
+    };
+    00000000000000000000001F /* StargazerApp.swift in Sources */ = {
+      isa = PBXBuildFile;
+      fileRef = 000000000000000000000012 /* StargazerApp.swift */;
+    };
+    000000000000000000000020 /* ContentView.swift in Sources */ = {
+      isa = PBXBuildFile;
+      fileRef = 000000000000000000000013 /* ContentView.swift */;
+    };
+    000000000000000000000021 /* ARViewContainer.swift in Sources */ = {
+      isa = PBXBuildFile;
+      fileRef = 000000000000000000000014 /* ARViewContainer.swift */;
+    };
+    000000000000000000000022 /* LocationManager.swift in Sources */ = {
+      isa = PBXBuildFile;
+      fileRef = 000000000000000000000015 /* LocationManager.swift */;
+    };
+    000000000000000000000023 /* CelestialBody.swift in Sources */ = {
+      isa = PBXBuildFile;
+      fileRef = 000000000000000000000016 /* CelestialBody.swift */;
+    };
+    000000000000000000000024 /* CelestialCalculator.swift in Sources */ = {
+      isa = PBXBuildFile;
+      fileRef = 000000000000000000000017 /* CelestialCalculator.swift */;
+    };
+    000000000000000000000025 /* Info.plist in Resources */ = {
+      isa = PBXBuildFile;
+      fileRef = 000000000000000000000018 /* Info.plist */;
+    };
+    000000000000000000000012 /* StargazerApp.swift */ = {
+      isa = PBXFileReference;
+      lastKnownFileType = sourcecode.swift;
+      name = StargazerApp.swift;
+      path = StargazerApp.swift;
+      sourceTree = "<group>";
+    };
+    000000000000000000000013 /* ContentView.swift */ = {
+      isa = PBXFileReference;
+      lastKnownFileType = sourcecode.swift;
+      name = ContentView.swift;
+      path = ContentView.swift;
+      sourceTree = "<group>";
+    };
+    000000000000000000000014 /* ARViewContainer.swift */ = {
+      isa = PBXFileReference;
+      lastKnownFileType = sourcecode.swift;
+      name = ARViewContainer.swift;
+      path = ARViewContainer.swift;
+      sourceTree = "<group>";
+    };
+    000000000000000000000015 /* LocationManager.swift */ = {
+      isa = PBXFileReference;
+      lastKnownFileType = sourcecode.swift;
+      name = LocationManager.swift;
+      path = LocationManager.swift;
+      sourceTree = "<group>";
+    };
+    000000000000000000000016 /* CelestialBody.swift */ = {
+      isa = PBXFileReference;
+      lastKnownFileType = sourcecode.swift;
+      name = CelestialBody.swift;
+      path = CelestialBody.swift;
+      sourceTree = "<group>";
+    };
+    000000000000000000000017 /* CelestialCalculator.swift */ = {
+      isa = PBXFileReference;
+      lastKnownFileType = sourcecode.swift;
+      name = CelestialCalculator.swift;
+      path = CelestialCalculator.swift;
+      sourceTree = "<group>";
+    };
+    000000000000000000000018 /* Info.plist */ = {
+      isa = PBXFileReference;
+      lastKnownFileType = text.plist.xml;
+      path = Info.plist;
+      sourceTree = "<group>";
+    };
+  };
+  rootObject = 000000000000000000000001 /* Project object */;
+}

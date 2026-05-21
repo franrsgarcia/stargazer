@@ -1,0 +1,19 @@
+# Xcode
+.DS_Store
+build/
+DerivedData/
+*.xcuserstate
+*.xcworkspace
+xcuserdata/
+
+# SwiftPM
+.swiftpm/
+.build/
+
+# Playground
+timeline.xctimeline
+playground.xcworkspace
+
+# Misc
+*.swp
+*.lock
