@@ -12,6 +12,8 @@
         TargetAttributes = {
           000000000000000000000006 = {
             CreatedOnToolsVersion = 1430;
+            DevelopmentTeam = "";
+            ProvisioningStyle = Automatic;
           };
         };
       };
@@ -56,7 +58,7 @@
       name = Products;
       sourceTree = "<group>";
     };
-    000000000000000000000005 /* Project root group */ = {
+    000000000000000000000005 /* Stargazer */ = {
       isa = PBXGroup;
       children = (
         000000000000000000000012 /* StargazerApp.swift */,
@@ -65,16 +67,19 @@
         000000000000000000000015 /* LocationManager.swift */,
         000000000000000000000016 /* CelestialBody.swift */,
         000000000000000000000017 /* CelestialCalculator.swift */,
+        000000000000000000000019 /* StargazerModel.swift */,
         000000000000000000000018 /* Info.plist */,
       );
-      sourceTree = "<group>";
+      path = "";
+      sourceTree = SOURCE_ROOT;
     };
     000000000000000000000006 /* Stargazer */ = {
       isa = PBXNativeTarget;
-      buildConfigurationList = 000000000000000000000003;
+      buildConfigurationList = 000000000000000000000003 /* Build configuration list for PBXNativeTarget "Stargazer" */;
       buildPhases = (
         00000000000000000000001B /* Sources */,
         00000000000000000000001C /* Resources */,
+        00000000000000000000001D /* Frameworks */,
       );
       buildRules = (
       );
@@ -85,21 +90,173 @@
       productReference = 000000000000000000000011 /* Stargazer.app */;
       productType = "com.apple.product-type.application";
     };
-    000000000000000000000009 /* Debug */ = {
+    000000000000000000000007 /* Debug */ = {
       isa = XCBuildConfiguration;
       buildSettings = {
         ALWAYS_SEARCH_USER_PATHS = NO;
+        ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+        CLANG_ANALYZER_NONNULL = YES;
+        CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+        CLANG_CXX_LANGUAGE_DIALECT = "gnu++20";
+        CLANG_CXX_LIBRARY = "libc++";
         CLANG_ENABLE_MODULES = YES;
+        CLANG_ENABLE_OBJC_ARC = YES;
+        CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+        CLANG_WARN_BOOL_CONVERSION = YES;
+        CLANG_WARN_COMMA = YES;
+        CLANG_WARN_CONSTANT_CONVERSION = YES;
+        CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+        CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+        CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+        CLANG_WARN_EMPTY_BODY = YES;
+        CLANG_WARN_ENUM_CONVERSION = YES;
+        CLANG_WARN_INFINITE_RECURSION = YES;
+        CLANG_WARN_INT_CONVERSION = YES;
+        CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+        CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+        CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+        CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+        CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+        CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+        CLANG_WARN_STRICT_PROTOTYPES = YES;
+        CLANG_WARN_SUSPICIOUS_MOVE = YES;
+        CLANG_WARN_SUSPICIOUS_IMPLICIT_CONVERSION = YES;
+        CLANG_WARN_UNREACHABLE_CODE = YES;
+        CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+        COPY_PHASE_STRIP = NO;
         DEBUG_INFORMATION_FORMAT = dwarf;
         ENABLE_NS_ASSERTIONS = YES;
+        ENABLE_STRICT_OBJC_MSGSEND = YES;
         ENABLE_TESTABILITY = YES;
+        GCC_C_LANGUAGE_DIALECT = gnu11;
+        GCC_DYNAMIC_NO_PIC = NO;
+        GCC_NO_COMMON_BLOCKS = YES;
         GCC_OPTIMIZATION_LEVEL = 0;
+        GCC_PREPROCESSOR_DEFINITIONS = (
+          "DEBUG=1",
+          "$(inherited)",
+        );
+        GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+        GCC_WARN_ABOUT_DEPRECATED_FUNCTIONS = YES;
+        GCC_WARN_ABOUT_MISSING_FIELD_INITIALIZERS = YES;
+        GCC_WARN_ABOUT_MISSING_NEWLINE = YES;
+        GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+        GCC_WARN_FOUR_CHARACTER_CONSTANTS = YES;
+        GCC_WARN_INITIALIZER_NOT_FULLY_BRACKETED = YES;
+        GCC_WARN_MISSING_PARENTHESES = YES;
+        GCC_WARN_SHADOW = YES;
+        GCC_WARN_SIGN_COMPARE = YES;
+        GCC_WARN_UNDECLARED_SELECTOR = YES;
+        GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+        GCC_WARN_UNKNOWN_PRAGMAS = YES;
+        GCC_WARN_UNUSED_FUNCTION = YES;
+        GCC_WARN_UNUSED_LABEL = YES;
+        GCC_WARN_UNUSED_PARAMETER = YES;
+        GCC_WARN_UNUSED_VARIABLE = YES;
         IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-        MTL_ENABLE_DEBUG_INFO = NO;
+        MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+        MTL_FAST_MATH = YES;
+        ONLY_ACTIVE_ARCH = YES;
         PRODUCT_BUNDLE_IDENTIFIER = com.example.Stargazer;
         PRODUCT_NAME = "$(TARGET_NAME)";
+        SDKROOT = iphoneos;
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+        SWIFT_OPTIMIZATION_LEVEL = "-Onone";
         SWIFT_VERSION = 5.0;
-        SUPPORTS_MACCATALYST = NO;
+        TARGETED_DEVICE_FAMILY = "1,2";
+      };
+      name = Debug;
+    };
+    000000000000000000000008 /* Release */ = {
+      isa = XCBuildConfiguration;
+      buildSettings = {
+        ALWAYS_SEARCH_USER_PATHS = NO;
+        ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+        CLANG_ANALYZER_NONNULL = YES;
+        CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+        CLANG_CXX_LANGUAGE_DIALECT = "gnu++20";
+        CLANG_CXX_LIBRARY = "libc++";
+        CLANG_ENABLE_MODULES = YES;
+        CLANG_ENABLE_OBJC_ARC = YES;
+        CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+        CLANG_WARN_BOOL_CONVERSION = YES;
+        CLANG_WARN_COMMA = YES;
+        CLANG_WARN_CONSTANT_CONVERSION = YES;
+        CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+        CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+        CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+        CLANG_WARN_EMPTY_BODY = YES;
+        CLANG_WARN_ENUM_CONVERSION = YES;
+        CLANG_WARN_INFINITE_RECURSION = YES;
+        CLANG_WARN_INT_CONVERSION = YES;
+        CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+        CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+        CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+        CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+        CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+        CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+        CLANG_WARN_STRICT_PROTOTYPES = YES;
+        CLANG_WARN_SUSPICIOUS_MOVE = YES;
+        CLANG_WARN_SUSPICIOUS_IMPLICIT_CONVERSION = YES;
+        CLANG_WARN_UNREACHABLE_CODE = YES;
+        CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+        COPY_PHASE_STRIP = NO;
+        DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+        ENABLE_NS_ASSERTIONS = NO;
+        ENABLE_STRICT_OBJC_MSGSEND = YES;
+        GCC_C_LANGUAGE_DIALECT = gnu11;
+        GCC_NO_COMMON_BLOCKS = YES;
+        GCC_OPTIMIZATION_LEVEL = s;
+        GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+        GCC_WARN_ABOUT_DEPRECATED_FUNCTIONS = YES;
+        GCC_WARN_ABOUT_MISSING_FIELD_INITIALIZERS = YES;
+        GCC_WARN_ABOUT_MISSING_NEWLINE = YES;
+        GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+        GCC_WARN_FOUR_CHARACTER_CONSTANTS = YES;
+        GCC_WARN_INITIALIZER_NOT_FULLY_BRACKETED = YES;
+        GCC_WARN_MISSING_PARENTHESES = YES;
+        GCC_WARN_SHADOW = YES;
+        GCC_WARN_SIGN_COMPARE = YES;
+        GCC_WARN_UNDECLARED_SELECTOR = YES;
+        GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+        GCC_WARN_UNKNOWN_PRAGMAS = YES;
+        GCC_WARN_UNUSED_FUNCTION = YES;
+        GCC_WARN_UNUSED_LABEL = YES;
+        GCC_WARN_UNUSED_PARAMETER = YES;
+        GCC_WARN_UNUSED_VARIABLE = YES;
+        IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+        MTL_ENABLE_DEBUG_INFO = NO;
+        MTL_FAST_MATH = YES;
+        PRODUCT_BUNDLE_IDENTIFIER = com.example.Stargazer;
+        PRODUCT_NAME = "$(TARGET_NAME)";
+        SDKROOT = iphoneos;
+        SWIFT_COMPILATION_MODE = wholemodule;
+        SWIFT_OPTIMIZATION_LEVEL = "-O";
+        SWIFT_VERSION = 5.0;
+        TARGETED_DEVICE_FAMILY = "1,2";
+        VALIDATE_PRODUCT = YES;
+      };
+      name = Release;
+    };
+    000000000000000000000009 /* Debug */ = {
+      isa = XCBuildConfiguration;
+      buildSettings = {
+        ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+        CLANG_ENABLE_MODULES = YES;
+        CODE_SIGN_STYLE = Automatic;
+        CURRENT_PROJECT_VERSION = 1;
+        DEVELOPMENT_TEAM = "";
+        INFOPLIST_FILE = Info.plist;
+        IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+        LD_RUNPATH_SEARCH_PATHS = (
+          "$(inherited)",
+          "@executable_path/Frameworks",
+        );
+        MARKETING_VERSION = 1.0;
+        PRODUCT_BUNDLE_IDENTIFIER = com.example.Stargazer;
+        PRODUCT_NAME = "$(TARGET_NAME)";
+        SWIFT_EMIT_LOC_STRINGS = YES;
+        SWIFT_VERSION = 5.0;
         TARGETED_DEVICE_FAMILY = "1,2";
       };
       name = Debug;
@@ -107,17 +264,22 @@
     00000000000000000000000A /* Release */ = {
       isa = XCBuildConfiguration;
       buildSettings = {
-        ALWAYS_SEARCH_USER_PATHS = NO;
+        ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
         CLANG_ENABLE_MODULES = YES;
-        DEBUG_INFORMATION_FORMAT = dwarf;
-        ENABLE_NS_ASSERTIONS = NO;
-        GCC_OPTIMIZATION_LEVEL = 3;
+        CODE_SIGN_STYLE = Automatic;
+        CURRENT_PROJECT_VERSION = 1;
+        DEVELOPMENT_TEAM = "";
+        INFOPLIST_FILE = Info.plist;
         IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-        MTL_ENABLE_DEBUG_INFO = NO;
+        LD_RUNPATH_SEARCH_PATHS = (
+          "$(inherited)",
+          "@executable_path/Frameworks",
+        );
+        MARKETING_VERSION = 1.0;
         PRODUCT_BUNDLE_IDENTIFIER = com.example.Stargazer;
         PRODUCT_NAME = "$(TARGET_NAME)";
+        SWIFT_EMIT_LOC_STRINGS = YES;
         SWIFT_VERSION = 5.0;
-        SUPPORTS_MACCATALYST = NO;
         TARGETED_DEVICE_FAMILY = "1,2";
       };
       name = Release;
@@ -139,6 +301,7 @@
         000000000000000000000022 /* LocationManager.swift in Sources */,
         000000000000000000000023 /* CelestialBody.swift in Sources */,
         000000000000000000000024 /* CelestialCalculator.swift in Sources */,
+        000000000000000000000026 /* StargazerModel.swift in Sources */,
       );
       runOnlyForDeploymentPostprocessing = 0;
     };
@@ -147,6 +310,13 @@
       buildActionMask = 2147483647;
       files = (
         000000000000000000000025 /* Info.plist in Resources */,
+      );
+      runOnlyForDeploymentPostprocessing = 0;
+    };
+    00000000000000000000001D /* Frameworks */ = {
+      isa = PBXFrameworksBuildPhase;
+      buildActionMask = 2147483647;
+      files = (
       );
       runOnlyForDeploymentPostprocessing = 0;
     };
@@ -178,45 +348,43 @@
       isa = PBXBuildFile;
       fileRef = 000000000000000000000018 /* Info.plist */;
     };
+    000000000000000000000026 /* StargazerModel.swift in Sources */ = {
+      isa = PBXBuildFile;
+      fileRef = 000000000000000000000019 /* StargazerModel.swift */;
+    };
     000000000000000000000012 /* StargazerApp.swift */ = {
       isa = PBXFileReference;
       lastKnownFileType = sourcecode.swift;
-      name = StargazerApp.swift;
       path = StargazerApp.swift;
       sourceTree = "<group>";
     };
     000000000000000000000013 /* ContentView.swift */ = {
       isa = PBXFileReference;
       lastKnownFileType = sourcecode.swift;
-      name = ContentView.swift;
       path = ContentView.swift;
       sourceTree = "<group>";
     };
     000000000000000000000014 /* ARViewContainer.swift */ = {
       isa = PBXFileReference;
       lastKnownFileType = sourcecode.swift;
-      name = ARViewContainer.swift;
       path = ARViewContainer.swift;
       sourceTree = "<group>";
     };
     000000000000000000000015 /* LocationManager.swift */ = {
       isa = PBXFileReference;
       lastKnownFileType = sourcecode.swift;
-      name = LocationManager.swift;
       path = LocationManager.swift;
       sourceTree = "<group>";
     };
     000000000000000000000016 /* CelestialBody.swift */ = {
       isa = PBXFileReference;
       lastKnownFileType = sourcecode.swift;
-      name = CelestialBody.swift;
       path = CelestialBody.swift;
       sourceTree = "<group>";
     };
     000000000000000000000017 /* CelestialCalculator.swift */ = {
       isa = PBXFileReference;
       lastKnownFileType = sourcecode.swift;
-      name = CelestialCalculator.swift;
       path = CelestialCalculator.swift;
       sourceTree = "<group>";
     };
@@ -224,6 +392,12 @@
       isa = PBXFileReference;
       lastKnownFileType = text.plist.xml;
       path = Info.plist;
+      sourceTree = "<group>";
+    };
+    000000000000000000000019 /* StargazerModel.swift */ = {
+      isa = PBXFileReference;
+      lastKnownFileType = sourcecode.swift;
+      path = StargazerModel.swift;
       sourceTree = "<group>";
     };
   };
