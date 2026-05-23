@@ -55,15 +55,12 @@ final class StargazerModel: ObservableObject {
     @Published var viewportSize: CGSize = UIScreen.main.bounds.size
     @Published var locationLabel = "Locating..."
     @Published var cardinalMarkers: [CardinalMarker] = []
-    @Published var horizonLabelAnchor: CGPoint = .zero
-    @Published var horizonLabelAngle: Double = 0
     @Published private(set) var compassResetToken = UUID()
 
     private var selectedTrajectorySamples: [(date: Date, az: Double, alt: Double, isFuture: Bool)] = []
     private let geocoder = CLGeocoder()
     private var lastGeocodedCoordinate: CLLocationCoordinate2D?
     private var smoothedOverlays: [String: CGPoint] = [:]
-    private var smoothedHorizonLabelY: CGFloat?
     private var searchGuidanceComplete = false
     private var lastYawCorrection: Float = 0
 
@@ -143,7 +140,6 @@ final class StargazerModel: ObservableObject {
     func resetCompassAlignment() {
         locationManager.resetHeading()
         compassResetToken = UUID()
-        smoothedHorizonLabelY = nil
         statusText = "Compass realigned"
     }
 
@@ -558,104 +554,6 @@ final class StargazerModel: ObservableObject {
         return nil
     }
 
-    private func closestPointOnSegment(_ a: CGPoint, _ b: CGPoint, to point: CGPoint) -> CGPoint {
-        let dx = b.x - a.x
-        let dy = b.y - a.y
-        let lengthSquared = dx * dx + dy * dy
-        guard lengthSquared > 0.0001 else { return a }
-
-        let t = max(0, min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / lengthSquared))
-        return CGPoint(x: a.x + t * dx, y: a.y + t * dy)
-    }
-
-    private func horizonSampleAt(x: CGFloat, in points: [CGPoint]) -> (y: CGFloat, angle: Double)? {
-        guard points.count > 1 else { return nil }
-
-        var bestDirect: (y: CGFloat, angle: Double, score: CGFloat)?
-
-        for index in 0..<(points.count - 1) {
-            let p0 = points[index]
-            let p1 = points[index + 1]
-            let dx = p1.x - p0.x
-            let dy = p1.y - p0.y
-
-            if abs(dx) < 0.001 {
-                let distance = abs(x - p0.x)
-                if distance < 8 {
-                    let candidate = (y: (p0.y + p1.y) / 2, angle: Double(atan2(dy, max(dx, 0.001))), score: distance)
-                    if bestDirect == nil || candidate.score < bestDirect!.score {
-                        bestDirect = candidate
-                    }
-                }
-                continue
-            }
-
-            let minX = min(p0.x, p1.x)
-            let maxX = max(p0.x, p1.x)
-            guard x >= minX - 1 && x <= maxX + 1 else { continue }
-
-            let t = (x - p0.x) / dx
-            guard t >= -0.05, t <= 1.05 else { continue }
-
-            let clampedT = max(0, min(1, t))
-            let y = p0.y + clampedT * dy
-            let score = abs(t - clampedT)
-            if bestDirect == nil || score < bestDirect!.score {
-                bestDirect = (y, Double(atan2(dy, dx)), score)
-            }
-        }
-
-        if let bestDirect {
-            return (bestDirect.y, bestDirect.angle)
-        }
-
-        let target = CGPoint(x: x, y: points.map(\.y).reduce(0, +) / CGFloat(points.count))
-        var nearest = points[0]
-        var nearestDistance = CGFloat.greatestFiniteMagnitude
-        var nearestAngle = 0.0
-
-        for index in 0..<(points.count - 1) {
-            let p0 = points[index]
-            let p1 = points[index + 1]
-            let closest = closestPointOnSegment(p0, p1, to: target)
-            let distance = hypot(closest.x - target.x, closest.y - target.y)
-            if distance < nearestDistance {
-                nearestDistance = distance
-                nearest = closest
-                nearestAngle = Double(atan2(p1.y - p0.y, p1.x - p0.x))
-            }
-        }
-
-        return (nearest.y, nearestAngle)
-    }
-
-    private func smoothAngle(from previous: Double, to target: Double, factor: Double) -> Double {
-        var delta = target - previous
-        while delta > .pi { delta -= 2 * .pi }
-        while delta < -.pi { delta += 2 * .pi }
-        return previous + delta * factor
-    }
-
-    private func updateHorizonLabel(using points: [CGPoint], viewportSize: CGSize) {
-        guard points.count > 1, viewportSize.width > 0 else { return }
-
-        let centerX = viewportSize.width / 2
-        guard let sample = horizonSampleAt(x: centerX, in: points) else { return }
-
-        let smoothing: CGFloat = 0.28
-        let targetY = sample.y
-        let smoothedY: CGFloat
-        if let previous = smoothedHorizonLabelY {
-            smoothedY = previous + (targetY - previous) * smoothing
-        } else {
-            smoothedY = targetY
-        }
-
-        smoothedHorizonLabelY = smoothedY
-        horizonLabelAnchor = CGPoint(x: centerX, y: smoothedY)
-        horizonLabelAngle = smoothAngle(from: horizonLabelAngle, to: sample.angle, factor: Double(smoothing))
-    }
-
     private func horizonTangentAngle(at x: CGFloat, in horizonPts: [CGPoint]) -> Double {
         guard horizonPts.count >= 2 else { return 0 }
         let y = horizonY(at: x, in: horizonPts) ?? horizonPts[0].y
@@ -749,8 +647,6 @@ final class StargazerModel: ObservableObject {
             ), projection.cameraZ < 0.05 else { continue }
             horizonPts.append(projection.point)
         }
-
-        updateHorizonLabel(using: horizonPts, viewportSize: viewportSize)
 
         var cardinals: [CardinalMarker] = []
         if showHorizon {

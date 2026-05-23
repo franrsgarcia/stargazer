@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var model: StargazerModel
+    @AppStorage("hasSeenHorizonIntro") private var hasSeenHorizonIntro = false
     @State private var showSearchSheet = false
     @State private var showVisibilitySheet = false
     @State private var searchQuery = ""
@@ -17,7 +18,7 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black)
         .overlay(alignment: .top) {
-            locationHeader
+            topHeader
                 .padding(.horizontal, 16)
                 .padding(.top, 6)
         }
@@ -25,6 +26,18 @@ struct ContentView: View {
             bottomChrome
                 .padding(.horizontal, 16)
                 .padding(.bottom, 8)
+        }
+        .alert("The Horizon Line", isPresented: .init(
+            get: { !hasSeenHorizonIntro },
+            set: { isPresented in
+                if !isPresented { hasSeenHorizonIntro = true }
+            }
+        )) {
+            Button("Got it", role: .cancel) {
+                hasSeenHorizonIntro = true
+            }
+        } message: {
+            Text("The faint white arc marks Earth's horizon. Bodies above it are in the sky; below it are out of view. Use the compass button if alignment looks off.")
         }
         .sheet(isPresented: $showSearchSheet) {
             searchSheet
@@ -83,22 +96,8 @@ struct ContentView: View {
         let pts = model.horizonPoints
 
         smoothPath(from: pts)
-            .stroke(Color.white.opacity(0.9), style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
+            .stroke(Color.white.opacity(0.32), style: StrokeStyle(lineWidth: 0.75, lineCap: .round, lineJoin: .round))
             .allowsHitTesting(false)
-
-        if pts.count > 1 {
-            Text("HORIZON")
-                .font(.system(size: 8, weight: .semibold))
-                .foregroundColor(Color(white: 0.78))
-                .fixedSize(horizontal: true, vertical: true)
-                .padding(.horizontal, 3)
-                .padding(.vertical, 2)
-                .background(Color.white)
-                .cornerRadius(3)
-                .rotationEffect(.radians(model.horizonLabelAngle))
-                .position(model.horizonLabelAnchor)
-                .allowsHitTesting(false)
-        }
 
         ForEach(model.cardinalMarkers) { marker in
             cardinalLabel(marker)
@@ -110,6 +109,14 @@ struct ContentView: View {
 
     // MARK: - Chrome (safe-area insets)
 
+    private var topHeader: some View {
+        HStack(spacing: 8) {
+            Spacer(minLength: 0)
+            locationHeader
+            compassResetButton
+        }
+    }
+
     private var locationHeader: some View {
         Text(model.locationLabel)
             .font(.system(size: 13, weight: .semibold))
@@ -119,6 +126,20 @@ struct ContentView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .background(.ultraThinMaterial, in: Capsule())
+    }
+
+    private var compassResetButton: some View {
+        Button {
+            model.resetCompassAlignment()
+        } label: {
+            Image(systemName: "location.north.line.fill")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(.white)
+                .frame(width: 34, height: 34)
+                .background(.ultraThinMaterial, in: Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Reset compass")
     }
 
     private var bottomMenuBar: some View {
@@ -134,12 +155,6 @@ struct ContentView: View {
                 systemImage: model.showCameraFeed ? "camera.fill" : "circle.fill"
             ) {
                 model.showCameraFeed.toggle()
-            }
-
-            barDivider
-
-            bottomBarItem(title: "Compass", systemImage: "location.north.line.fill") {
-                model.resetCompassAlignment()
             }
 
             barDivider
