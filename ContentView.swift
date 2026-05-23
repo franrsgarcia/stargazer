@@ -10,6 +10,47 @@ struct ContentView: View {
         return min(fadeInOpacity, fadeOutOpacity) * baseOpacity
     }
 
+    @ViewBuilder
+    private var trajectoryView: some View {
+        if let selected = model.bodies.first(where: { $0.id == model.selectedBodyID }) {
+            // Past trajectory with fade-out at both ends
+            if !model.pastTrajectoryPoints.isEmpty {
+                let pts = model.pastTrajectoryPoints
+                if pts.count > 1 {
+                    ForEach(0..<(pts.count - 1), id: \.self) { i in
+                        let start = pts[i]
+                        let end = pts[i + 1]
+                        let opacity = segmentOpacity(index: i, totalCount: pts.count, baseOpacity: 0.35)
+                        
+                        Path { path in
+                            path.move(to: start)
+                            path.addLine(to: end)
+                        }
+                        .stroke(selected.color.opacity(opacity), lineWidth: 1)
+                    }
+                }
+            }
+
+            // Future trajectory with fade-out at both ends
+            if !model.futureTrajectoryPoints.isEmpty {
+                let pts = model.futureTrajectoryPoints
+                if pts.count > 1 {
+                    ForEach(0..<(pts.count - 1), id: \.self) { i in
+                        let start = pts[i]
+                        let end = pts[i + 1]
+                        let opacity = segmentOpacity(index: i, totalCount: pts.count, baseOpacity: 1.0)
+                        
+                        Path { path in
+                            path.move(to: start)
+                            path.addLine(to: end)
+                        }
+                        .stroke(selected.color.opacity(opacity), lineWidth: 2)
+                    }
+                }
+            }
+        }
+    }
+
     // Produce a smooth path from a series of points using quadratic segments
     private func smoothPath(from pts: [CGPoint]) -> Path {
         var path = Path()
@@ -72,43 +113,7 @@ struct ContentView: View {
                 }
             }
 
-            if let selected = model.bodies.first(where: { $0.id == model.selectedBodyID }) {
-                // Past trajectory with fade-out at both ends
-                if !model.pastTrajectoryPoints.isEmpty {
-                    let pts = model.pastTrajectoryPoints
-                    if pts.count > 1 {
-                        ForEach(0..<(pts.count - 1), id: \.self) { i in
-                            let start = pts[i]
-                            let end = pts[i + 1]
-                            let opacity = segmentOpacity(index: i, totalCount: pts.count, baseOpacity: 0.35)
-                            
-                            Path { path in
-                                path.move(to: start)
-                                path.addLine(to: end)
-                            }
-                            .stroke(selected.color.opacity(opacity), lineWidth: 1)
-                        }
-                    }
-                }
-
-                // Future trajectory with fade-out at both ends
-                if !model.futureTrajectoryPoints.isEmpty {
-                    let pts = model.futureTrajectoryPoints
-                    if pts.count > 1 {
-                        ForEach(0..<(pts.count - 1), id: \.self) { i in
-                            let start = pts[i]
-                            let end = pts[i + 1]
-                            let opacity = segmentOpacity(index: i, totalCount: pts.count, baseOpacity: 1.0)
-                            
-                            Path { path in
-                                path.move(to: start)
-                                path.addLine(to: end)
-                            }
-                            .stroke(selected.color.opacity(opacity), lineWidth: 2)
-                        }
-                    }
-                }
-            }
+            trajectoryView
 
             // Draw horizon reference line
             if model.showHorizon, model.horizonPoints.count > 1 {
