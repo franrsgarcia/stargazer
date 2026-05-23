@@ -87,19 +87,20 @@ struct ContentView: View {
                 let pts = model.horizonPoints
                 smoothPath(from: pts)
                     .stroke(Color.white.opacity(0.9), style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
-                    .shadow(color: Color.black.opacity(0.6), radius: 2, x: 0, y: 1)
 
-                // Horizon label placed at midpoint of the horizon samples
+                // Horizon label placed at midpoint of the horizon samples, vertically centered on the line
                 let midIndex = pts.count / 2
                 if midIndex < pts.count {
                     let labelPoint = pts[midIndex]
-                    Text("Horizon")
-                        .font(.caption)
-                        .foregroundColor(.white)
-                        .padding(6)
-                        .background(.ultraThinMaterial)
-                        .cornerRadius(8)
-                        .position(x: labelPoint.x, y: labelPoint.y - 14)
+                    Text("HORIZON")
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .foregroundColor(Color.white.opacity(0.9))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.black.opacity(0.25))
+                        .cornerRadius(10)
+                        .position(x: labelPoint.x, y: labelPoint.y)
                 }
             }
 
