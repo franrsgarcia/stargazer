@@ -56,6 +56,7 @@ final class StargazerModel: ObservableObject {
     @Published var locationLabel = "Locating..."
     @Published var cardinalMarkers: [CardinalMarker] = []
     @Published var isCalibrated = false
+    @Published var isCalibrating = false
     @Published var calibrationMessage = ""
 
     private var selectedTrajectorySamples: [(date: Date, az: Double, alt: Double, isFuture: Bool)] = []
@@ -88,39 +89,45 @@ final class StargazerModel: ObservableObject {
         isCalibrated = saved.isCalibrated
     }
 
-    func calibrateToNorth() {
-        guard let heading = currentHeading else {
-            calibrationMessage = "Compass heading is not available yet."
-            return
-        }
-        let north = heading.trueHeading >= 0 ? heading.trueHeading : heading.magneticHeading
-        let deviceAzimuth = SkyCalibration.cameraAzimuthDegrees(from: lastCameraTransform)
-        azimuthCalibrationOffset = SkyCalibration.northCalibrationOffset(deviceAzimuth: deviceAzimuth, trueNorth: north)
-        SkyCalibration.save(azimuthOffset: azimuthCalibrationOffset, altitudeOffset: altitudeCalibrationOffset)
-        isCalibrated = true
-        calibrationMessage = String(format: "Aligned to north (%.1f° correction).", azimuthCalibrationOffset)
-        refreshCelestialData()
+    func beginCalibration() {
+        isCalibrating = true
+        calibrationMessage = ""
     }
 
-    func calibrateToSun() {
-        guard let sun = bodies.first(where: { $0.name == "Sun" }) else {
-            calibrationMessage = "Sun position is not available."
-            return
-        }
-        let deviceAzimuth = SkyCalibration.cameraAzimuthDegrees(from: lastCameraTransform)
-        azimuthCalibrationOffset = SkyCalibration.sunCalibrationOffset(deviceAzimuth: deviceAzimuth, sunAzimuth: sun.azimuth)
-        SkyCalibration.save(azimuthOffset: azimuthCalibrationOffset, altitudeOffset: altitudeCalibrationOffset)
-        isCalibrated = true
-        calibrationMessage = String(format: "Aligned to the Sun (%.1f° correction).", azimuthCalibrationOffset)
-        refreshCelestialData()
+    func cancelCalibration() {
+        isCalibrating = false
     }
 
-    func calibrateHorizon() {
-        let cameraAltitude = SkyCalibration.cameraAltitudeDegrees(from: lastCameraTransform)
-        altitudeCalibrationOffset = -cameraAltitude
+    func calibrateFromTarget() {
+        guard let sun = bodies.first(where: { $0.name == "Sun" }),
+              let moon = bodies.first(where: { $0.name == "Moon" }) else {
+            calibrationMessage = "Sun and Moon positions are not available yet."
+            return
+        }
+
+        let deviceAzimuth = SkyCalibration.cameraAzimuthDegrees(from: lastCameraTransform)
+        let deviceAltitude = SkyCalibration.cameraAltitudeDegrees(from: lastCameraTransform)
+
+        let sunDistance = SkyCalibration.angularSeparation(
+            azimuthA: deviceAzimuth,
+            altitudeA: deviceAltitude,
+            azimuthB: sun.azimuth,
+            altitudeB: sun.altitude
+        )
+        let moonDistance = SkyCalibration.angularSeparation(
+            azimuthA: deviceAzimuth,
+            altitudeA: deviceAltitude,
+            azimuthB: moon.azimuth,
+            altitudeB: moon.altitude
+        )
+
+        let target = sunDistance <= moonDistance ? sun : moon
+        azimuthCalibrationOffset = SkyCalibration.shortestSignedDelta(from: deviceAzimuth, to: target.azimuth)
+        altitudeCalibrationOffset = target.altitude - deviceAltitude
         SkyCalibration.save(azimuthOffset: azimuthCalibrationOffset, altitudeOffset: altitudeCalibrationOffset)
         isCalibrated = true
-        calibrationMessage = String(format: "Horizon leveled (%.1f° pitch correction).", altitudeCalibrationOffset)
+        isCalibrating = false
+        calibrationMessage = "Aligned to the \(target.name)."
         refreshCelestialData()
     }
 
@@ -555,8 +562,29 @@ final class StargazerModel: ObservableObject {
         return segments
     }
 
-    private func horizonTangentAngle(at point: CGPoint, in horizonPts: [CGPoint]) -> Double {
+    private func horizonY(at x: CGFloat, in points: [CGPoint]) -> CGFloat? {
+        guard points.count >= 2 else { return nil }
+
+        for i in 0..<(points.count - 1) {
+            let p0 = points[i]
+            let p1 = points[i + 1]
+            let minX = min(p0.x, p1.x)
+            let maxX = max(p0.x, p1.x)
+            guard x >= minX && x <= maxX else { continue }
+
+            if abs(p1.x - p0.x) < 0.001 {
+                return (p0.y + p1.y) / 2
+            }
+            let t = (x - p0.x) / (p1.x - p0.x)
+            return p0.y + t * (p1.y - p0.y)
+        }
+        return nil
+    }
+
+    private func horizonTangentAngle(at x: CGFloat, in horizonPts: [CGPoint]) -> Double {
         guard horizonPts.count >= 2 else { return 0 }
+        let y = horizonY(at: x, in: horizonPts) ?? horizonPts[0].y
+        let point = CGPoint(x: x, y: y)
         var bestIndex = 0
         var bestDistance = CGFloat.greatestFiniteMagnitude
         for i in 0..<horizonPts.count {
@@ -647,15 +675,12 @@ final class StargazerModel: ObservableObject {
                     viewportSize: viewportSize
                 ), projection.cameraZ < 0.05 else { continue }
 
-                let tangent = horizonTangentAngle(at: projection.point, in: horizonPts)
-                let labelOffset: CGFloat = 13
-                let labelPoint = CGPoint(
-                    x: projection.point.x + CGFloat(sin(tangent)) * labelOffset,
-                    y: projection.point.y - CGFloat(cos(tangent)) * labelOffset
-                )
+                let x = projection.point.x
+                guard let y = horizonY(at: x, in: horizonPts) else { continue }
+                let tangent = horizonTangentAngle(at: x, in: horizonPts)
                 cardinals.append(CardinalMarker(
                     label: label,
-                    point: labelPoint,
+                    point: CGPoint(x: x, y: y),
                     rotation: tangent,
                     isNorth: label == "N"
                 ))

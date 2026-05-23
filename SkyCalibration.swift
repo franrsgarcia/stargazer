@@ -71,4 +71,27 @@ enum SkyCalibration {
     static func sunCalibrationOffset(deviceAzimuth: Double, sunAzimuth: Double) -> Double {
         shortestSignedDelta(from: deviceAzimuth, to: sunAzimuth)
     }
+
+    static func angularSeparation(
+        azimuthA: Double,
+        altitudeA: Double,
+        azimuthB: Double,
+        altitudeB: Double
+    ) -> Double {
+        let az1 = azimuthA * .pi / 180
+        let az2 = azimuthB * .pi / 180
+        let alt1 = altitudeA * .pi / 180
+        let alt2 = altitudeB * .pi / 180
+
+        let ax = cos(alt1) * sin(az1)
+        let ay = sin(alt1)
+        let az = -cos(alt1) * cos(az1)
+
+        let bx = cos(alt2) * sin(az2)
+        let by = sin(alt2)
+        let bz = -cos(alt2) * cos(az2)
+
+        let dot = max(-1, min(1, Double(ax * bx + ay * by + az * bz)))
+        return acos(dot) * 180 / .pi
+    }
 }

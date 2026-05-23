@@ -4,7 +4,6 @@ struct ContentView: View {
     @EnvironmentObject private var model: StargazerModel
     @State private var showSearchSheet = false
     @State private var showVisibilitySheet = false
-    @State private var showCalibrationSheet = false
     @State private var searchQuery = ""
 
     private func horizonLineAngle(for points: [CGPoint]) -> Double {
@@ -182,10 +181,44 @@ struct ContentView: View {
                 ARViewContainer()
                     .edgesIgnoringSafeArea(.all)
 
+                if !model.isCalibrating {
+                    skyOverlay(in: geometry)
+                }
+
+                if model.isCalibrating {
+                    calibrationOverlay
+                } else {
+                    topOverlayBar
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if !model.isCalibrating {
+                    bottomMenuBar
+                        .padding(.horizontal, 24)
+                        .padding(.bottom, 12)
+                }
+            }
+            .onAppear {
+                model.viewportSize = geometry.size
+            }
+            .onChange(of: geometry.size) { newSize in
+                model.viewportSize = newSize
+            }
+        }
+        .background(Color.black)
+        .sheet(isPresented: $showSearchSheet) {
+            searchSheet
+        }
+        .sheet(isPresented: $showVisibilitySheet) {
+            visibilitySheet
+        }
+    }
+
+    @ViewBuilder
+    private func skyOverlay(in geometry: GeometryProxy) -> some View {
+        ZStack {
                 trajectoryView
                     .allowsHitTesting(false)
-
-                topOverlayBar
 
                 ForEach(model.bodies) { body in
                     if model.shouldRenderMarker(for: body), let point = model.bodyOverlays[body.name] {
@@ -240,58 +273,77 @@ struct ContentView: View {
                    let selected = model.bodies.first(where: { $0.name == model.selectedBodyName }) {
                     infoCard(for: selected)
                 }
-            }
-            .onAppear {
-                model.viewportSize = geometry.size
-            }
-            .onChange(of: geometry.size) { newSize in
-                model.viewportSize = newSize
-            }
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            bottomMenuBar
-        }
-        .background(Color.black)
-        .sheet(isPresented: $showSearchSheet) {
-            searchSheet
-        }
-        .sheet(isPresented: $showVisibilitySheet) {
-            visibilitySheet
-        }
-        .sheet(isPresented: $showCalibrationSheet) {
-            calibrationSheet
         }
     }
 
     private var topOverlayBar: some View {
-        VStack {
-            HStack(alignment: .top) {
+        VStack(spacing: 0) {
+            ZStack {
                 Text(model.locationLabel)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(.white)
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, 14)
                     .padding(.vertical, 7)
                     .modifier(GlassChipModifier(cornerRadius: 10))
+                    .frame(maxWidth: .infinity)
 
-                Spacer()
-
-                Button {
-                    showCalibrationSheet = true
-                } label: {
-                    Image(systemName: model.isCalibrated ? "checkmark.circle.fill" : "scope")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.white)
-                        .padding(10)
-                        .modifier(GlassChipModifier(cornerRadius: 10))
+                HStack {
+                    Spacer()
+                    Button {
+                        model.beginCalibration()
+                    } label: {
+                        Image(systemName: model.isCalibrated ? "checkmark.circle.fill" : "scope")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white)
+                            .padding(10)
+                            .modifier(GlassChipModifier(cornerRadius: 10))
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
             .padding(.horizontal, 14)
             .padding(.top, 8)
 
             Spacer()
         }
-        .allowsHitTesting(true)
+    }
+
+    private var calibrationOverlay: some View {
+        ZStack {
+            calibrationTarget
+
+            VStack {
+                Spacer()
+                Button("Calibrate") {
+                    model.calibrateFromTarget()
+                }
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundColor(.black)
+                .padding(.horizontal, 36)
+                .padding(.vertical, 14)
+                .background(Color.white)
+                .cornerRadius(14)
+
+                Button("Cancel") {
+                    model.cancelCalibration()
+                }
+                .font(.system(size: 15, weight: .medium))
+                .foregroundColor(.white.opacity(0.9))
+                .padding(.top, 10)
+                .padding(.bottom, 100)
+            }
+        }
+    }
+
+    private var calibrationTarget: some View {
+        ZStack {
+            Circle()
+                .stroke(Color.white, lineWidth: 2)
+                .frame(width: 48, height: 48)
+            Circle()
+                .fill(Color.white)
+                .frame(width: 7, height: 7)
+        }
     }
 
     @ViewBuilder
@@ -304,62 +356,6 @@ struct ContentView: View {
             .padding(.vertical, 2)
             .background(marker.isNorth ? Color.red : Color.white.opacity(0.92))
             .cornerRadius(3)
-    }
-
-    private var calibrationSheet: some View {
-        NavigationStack {
-            List {
-                Section {
-                    Text("Hold the phone level. Point the top edge toward north along the horizon, then calibrate.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-
-                Section("Azimuth") {
-                    Button("Calibrate to North") {
-                        model.calibrateToNorth()
-                    }
-                    Button("Calibrate to the Sun") {
-                        model.calibrateToSun()
-                    }
-                    .disabled(model.bodies.first(where: { $0.name == "Sun" }) == nil)
-                }
-
-                Section("Horizon") {
-                    Button("Level Horizon") {
-                        model.calibrateHorizon()
-                    }
-                }
-
-                if !model.calibrationMessage.isEmpty {
-                    Section {
-                        Text(model.calibrationMessage)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                Section {
-                    Button("Reset Calibration", role: .destructive) {
-                        model.resetCalibration()
-                    }
-                }
-            }
-            .listStyle(.insetGrouped)
-            .scrollContentBackground(.hidden)
-            .navigationTitle("Calibration")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
-                        showCalibrationSheet = false
-                    }
-                }
-            }
-        }
-        .modifier(SheetGlassBackgroundModifier())
-        .presentationDetents([.medium])
-        .presentationDragIndicator(.visible)
     }
 
     private var bottomMenuBar: some View {
@@ -383,8 +379,7 @@ struct ContentView: View {
                 showVisibilitySheet = true
             }
         }
-        .frame(maxWidth: .infinity)
-        .modifier(BottomGlassBarModifier())
+        .modifier(CameraStyleBarModifier())
     }
 
     private var barDivider: some View {
@@ -577,23 +572,19 @@ struct ContentView: View {
 
 // MARK: - Liquid Glass styling (iOS 26 with material fallback)
 
-private struct BottomGlassBarModifier: ViewModifier {
+private struct CameraStyleBarModifier: ViewModifier {
     func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {
             content
-                .padding(.top, 8)
-                .padding(.bottom, 4)
-                .glassEffect(.regular.interactive(), in: .rect)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .glassEffect(.regular.interactive(), in: .capsule)
         } else {
             content
-                .padding(.top, 8)
-                .padding(.bottom, 4)
-                .background(.ultraThinMaterial)
-                .overlay(alignment: .top) {
-                    Rectangle()
-                        .fill(Color.white.opacity(0.12))
-                        .frame(height: 0.5)
-                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay(Capsule().stroke(Color.white.opacity(0.14), lineWidth: 0.5))
         }
     }
 }
