@@ -13,28 +13,42 @@ struct ContentView: View {
 
             skyOverlay
                 .ignoresSafeArea()
+
+            overlayUI
         }
-        .safeAreaInset(edge: .top, spacing: 12) {
-            locationHeader
-                .padding(.horizontal, 20)
-        }
-        .safeAreaInset(edge: .bottom, spacing: 12) {
-            VStack(spacing: 12) {
-                if model.showInfoCard,
-                   let selected = model.bodies.first(where: { $0.name == model.selectedBodyName }) {
-                    infoCardContent(for: selected)
-                }
-                bottomMenuBar
-            }
-            .padding(.horizontal, 20)
-        }
-        .background(Color.black)
         .sheet(isPresented: $showSearchSheet) {
             searchSheet
         }
         .sheet(isPresented: $showVisibilitySheet) {
             visibilitySheet
         }
+    }
+
+    /// Chrome floating over the fullscreen feed — separate from the AR layer.
+    private var overlayUI: some View {
+        VStack(spacing: 0) {
+            locationHeader
+                .padding(.horizontal, 16)
+                .padding(.top, 6)
+
+            Spacer(minLength: 0)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            bottomChrome
+        }
+    }
+
+    private var bottomChrome: some View {
+        VStack(spacing: 8) {
+            if model.showInfoCard,
+               let selected = model.bodies.first(where: { $0.name == model.selectedBodyName }) {
+                infoCardContent(for: selected)
+            }
+            bottomMenuBar
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .padding(.bottom, 8)
     }
 
     // MARK: - Sky overlay (AR annotations)
@@ -110,10 +124,9 @@ struct ContentView: View {
             .foregroundColor(.white)
             .lineLimit(1)
             .minimumScaleFactor(0.8)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .frame(maxWidth: .infinity)
-            .modifier(GlassChipModifier(cornerRadius: 12))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(.ultraThinMaterial, in: Capsule())
     }
 
     private var bottomMenuBar: some View {
@@ -163,7 +176,7 @@ struct ContentView: View {
         }
         .foregroundColor(.white)
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
+        .padding(.vertical, 6)
     }
 
     // MARK: - Sheets
@@ -516,13 +529,13 @@ private struct FloatingMenuBarModifier: ViewModifier {
     func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {
             content
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
                 .glassEffect(.regular.interactive(), in: .capsule)
         } else {
             content
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
                 .background(.ultraThinMaterial, in: Capsule())
                 .overlay(Capsule().stroke(Color.white.opacity(0.14), lineWidth: 0.5))
         }
