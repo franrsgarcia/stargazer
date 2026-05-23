@@ -212,14 +212,17 @@ struct ContentView: View {
                                         .foregroundColor(.white)
                                 )
 
-                            VStack(alignment: .leading, spacing: 3) {
+                            VStack(alignment: .leading, spacing: 2) {
                                 Text(selected.name)
-                                    .font(.system(size: 16, weight: .semibold))
+                                    .font(.system(size: 14, weight: .semibold))
                                     .foregroundColor(.white)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.7)
                                 Text(selected.descriptionText)
-                                    .font(.system(size: 12))
+                                    .font(.system(size: 11))
                                     .foregroundColor(.white.opacity(0.8))
                                     .lineLimit(2)
+                                    .minimumScaleFactor(0.7)
                             }
 
                             Spacer()
@@ -236,7 +239,6 @@ struct ContentView: View {
 
                         HStack(spacing: 10) {
                             infoTile(iconName: "arrow.up.right.circle", title: "Distance", value: selected.distanceText)
-                            infoTile(iconName: "star.fill", title: "Magnitude", value: selected.magnitudeText)
                             infoTile(iconName: "eye", title: "Visible", value: selected.visibleUntilText)
                         }
                         .padding(.horizontal, 2)
@@ -254,21 +256,22 @@ struct ContentView: View {
     }
 
     private func infoTile(iconName: String, title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
                 Image(systemName: iconName)
-                    .font(.system(size: 13))
+                    .font(.system(size: 12))
                     .foregroundColor(.white.opacity(0.85))
                 Text(title.uppercased())
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 9, weight: .semibold))
                     .foregroundColor(.white.opacity(0.75))
             }
             Text(value)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: 10, weight: .semibold))
                 .foregroundColor(.white)
                 .lineLimit(1)
+                .minimumScaleFactor(0.6)
         }
-        .padding(10)
+        .padding(8)
         .background(Color.white.opacity(0.08))
         .cornerRadius(12)
     }
