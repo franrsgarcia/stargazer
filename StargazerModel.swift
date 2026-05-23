@@ -289,7 +289,8 @@ final class StargazerModel: ObservableObject {
         altitude: Double,
         viewMatrix: simd_float4x4,
         projectionMatrix: simd_float4x4,
-        viewportSize: CGSize
+        viewportSize: CGSize,
+        screenOffset: CGPoint = .zero
     ) -> (point: CGPoint, cameraZ: Float)? {
         let direction = CelestialCalculator.directionVector(azimuth: azimuth, altitude: altitude)
         let cameraPoint = viewMatrix * SIMD4<Float>(direction, 0)
@@ -299,14 +300,14 @@ final class StargazerModel: ObservableObject {
         guard clip.w != 0 else { return nil }
 
         let ndc = clip / clip.w
-        let x = CGFloat((ndc.x + 1) / 2) * viewportSize.width
-        let y = CGFloat((1 - ndc.y) / 2) * viewportSize.height
+        let x = CGFloat((ndc.x + 1) / 2) * viewportSize.width - screenOffset.x
+        let y = CGFloat((1 - ndc.y) / 2) * viewportSize.height - screenOffset.y
         return (CGPoint(x: x, y: y), cameraZ)
     }
 
     private func isInFront(cameraZ: Float, altitude: Double) -> Bool {
-        // Below-horizon directions need a looser threshold so markers remain visible when panning down.
-        let threshold: Float = altitude < 0 ? 0.2 : 0.05
+        // Below-horizon bodies sit on the far side of the globe; use a looser threshold when panning down.
+        let threshold: Float = altitude < 0 ? 0.35 : 0.05
         return cameraZ < threshold
     }
 
@@ -439,7 +440,9 @@ final class StargazerModel: ObservableObject {
         from samples: [(date: Date, az: Double, alt: Double, isFuture: Bool)],
         viewMatrix: simd_float4x4,
         projectionMatrix: simd_float4x4,
-        viewportSize: CGSize,
+        projectionViewport: CGSize,
+        visibleViewport: CGSize,
+        screenOffset: CGPoint,
         maxJump: CGFloat
     ) -> [[CGPoint]] {
         var segments: [[CGPoint]] = []
@@ -453,21 +456,23 @@ final class StargazerModel: ObservableObject {
         }
 
         for sample in samples {
+            let inFrontThreshold: Float = sample.alt < 0 ? 0.35 : 0.2
             guard let projection = project(
                 azimuth: sample.az,
                 altitude: sample.alt,
                 viewMatrix: viewMatrix,
                 projectionMatrix: projectionMatrix,
-                viewportSize: viewportSize
-            ), projection.cameraZ < 0.2 else {
+                viewportSize: projectionViewport,
+                screenOffset: screenOffset
+            ), projection.cameraZ < inFrontThreshold else {
                 flush()
                 continue
             }
 
             let point = projection.point
             let margin: CGFloat = 120
-            let onScreen = point.x >= -margin && point.x <= viewportSize.width + margin &&
-                point.y >= -margin && point.y <= viewportSize.height + margin
+            let onScreen = point.x >= -margin && point.x <= visibleViewport.width + margin &&
+                point.y >= -margin && point.y <= visibleViewport.height + margin
             guard onScreen else {
                 flush()
                 continue
@@ -525,9 +530,11 @@ final class StargazerModel: ObservableObject {
         return atan2(dy, dx)
     }
 
-    func updateOverlays(from frame: ARFrame, viewportSize: CGSize) {
+    func updateOverlays(from frame: ARFrame, viewportSize: CGSize, arViewFrame: CGRect? = nil) {
+        let projectionViewport = arViewFrame?.size ?? viewportSize
+        let projectionOffset = CGPoint(x: arViewFrame?.origin.x ?? 0, y: arViewFrame?.origin.y ?? 0)
         let viewMatrix = frame.camera.viewMatrix(for: .portrait)
-        let projectionMatrix = frame.camera.projectionMatrix(for: .portrait, viewportSize: viewportSize, zNear: 0.01, zFar: 1000)
+        let projectionMatrix = frame.camera.projectionMatrix(for: .portrait, viewportSize: projectionViewport, zNear: 0.01, zFar: 1000)
         lastViewMatrix = viewMatrix
         lastProjectionMatrix = projectionMatrix
 
@@ -539,7 +546,8 @@ final class StargazerModel: ObservableObject {
                 altitude: body.altitude,
                 viewMatrix: viewMatrix,
                 projectionMatrix: projectionMatrix,
-                viewportSize: viewportSize
+                viewportSize: projectionViewport,
+                screenOffset: projectionOffset
             ), isInFront(cameraZ: projection.cameraZ, altitude: body.altitude) else {
                 continue
             }
@@ -561,14 +569,18 @@ final class StargazerModel: ObservableObject {
                 from: selectedTrajectorySamples.filter { !$0.isFuture },
                 viewMatrix: viewMatrix,
                 projectionMatrix: projectionMatrix,
-                viewportSize: viewportSize,
+                projectionViewport: projectionViewport,
+                visibleViewport: viewportSize,
+                screenOffset: projectionOffset,
                 maxJump: maxJump
             )
             futureSegments = buildTrajectorySegments(
                 from: selectedTrajectorySamples.filter { $0.isFuture },
                 viewMatrix: viewMatrix,
                 projectionMatrix: projectionMatrix,
-                viewportSize: viewportSize,
+                projectionViewport: projectionViewport,
+                visibleViewport: viewportSize,
+                screenOffset: projectionOffset,
                 maxJump: maxJump
             )
         }
@@ -580,7 +592,8 @@ final class StargazerModel: ObservableObject {
                 altitude: 0.0,
                 viewMatrix: viewMatrix,
                 projectionMatrix: projectionMatrix,
-                viewportSize: viewportSize
+                viewportSize: projectionViewport,
+                screenOffset: projectionOffset
             ), projection.cameraZ < 0.05 else { continue }
             horizonPts.append(projection.point)
         }
@@ -593,7 +606,8 @@ final class StargazerModel: ObservableObject {
                     altitude: 0,
                     viewMatrix: viewMatrix,
                     projectionMatrix: projectionMatrix,
-                    viewportSize: viewportSize
+                    viewportSize: projectionViewport,
+                    screenOffset: projectionOffset
                 ), projection.cameraZ < 0.05 else { continue }
 
                 let x = projection.point.x
@@ -621,7 +635,8 @@ final class StargazerModel: ObservableObject {
                     altitude: body.altitude,
                     viewMatrix: viewMatrix,
                     projectionMatrix: projectionMatrix,
-                    viewportSize: viewportSize
+                    viewportSize: projectionViewport,
+                    screenOffset: projectionOffset
                 )?.point
             }
         }

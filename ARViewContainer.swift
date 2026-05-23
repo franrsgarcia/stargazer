@@ -3,14 +3,13 @@ import Combine
 import RealityKit
 import ARKit
 
-/// Hosts an ARView that fills the screen edge-to-edge (aspect fill, no letterboxing).
+/// Fullscreen camera host — ARView fills edge-to-edge with aspect-fill cropping (no letterboxing).
 final class FullscreenARContainerView: UIView {
     let arView: ARView
     var onViewportChange: ((CGSize) -> Void)?
 
     override init(frame: CGRect) {
-        arView = ARView(frame: frame)
-        arView.automaticallyConfigureSession = false
+        arView = ARView(frame: .zero, cameraMode: .ar, automaticallyConfigureSession: false)
         super.init(frame: frame)
         clipsToBounds = true
         backgroundColor = .black
@@ -23,38 +22,48 @@ final class FullscreenARContainerView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        arView.frame = bounds
-        applyAspectFillTransform()
+        layoutAspectFillCamera()
         onViewportChange?(bounds.size)
     }
 
-    func applyAspectFillTransformIfNeeded() {
-        applyAspectFillTransform()
+    func setShowsCameraFeed(_ shows: Bool) {
+        if shows {
+            arView.environment.background = .cameraFeed()
+        } else {
+            arView.environment.background = .color(.black)
+        }
     }
 
-    private func applyAspectFillTransform() {
+    /// Sizes ARView larger than bounds when needed so the camera feed crops like `.resizeAspectFill`.
+    private func layoutAspectFillCamera() {
         guard bounds.width > 0, bounds.height > 0 else {
-            arView.layer.transform = CATransform3DIdentity
+            arView.frame = bounds
             return
         }
 
         guard let frame = arView.session.currentFrame else {
-            arView.layer.transform = CATransform3DIdentity
+            arView.frame = bounds
             return
         }
 
-        // Camera buffer is landscape; portrait effective size swaps dimensions.
+        // Camera buffer is landscape; portrait display swaps width/height for aspect ratio.
         let imageWidth = CGFloat(frame.camera.imageResolution.height)
         let imageHeight = CGFloat(frame.camera.imageResolution.width)
         guard imageWidth > 0, imageHeight > 0 else {
-            arView.layer.transform = CATransform3DIdentity
+            arView.frame = bounds
             return
         }
 
-        let scale = max(bounds.width / imageWidth, bounds.height / imageHeight)
-        arView.layer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
-        arView.layer.position = CGPoint(x: bounds.midX, y: bounds.midY)
-        arView.layer.transform = CATransform3DMakeScale(Float(scale), Float(scale), 1)
+        let contentAspect = imageWidth / imageHeight
+        let viewAspect = bounds.width / bounds.height
+
+        if viewAspect > contentAspect {
+            let height = bounds.width / contentAspect
+            arView.frame = CGRect(x: 0, y: (bounds.height - height) / 2, width: bounds.width, height: height)
+        } else {
+            let width = bounds.height * contentAspect
+            arView.frame = CGRect(x: (bounds.width - width) / 2, y: 0, width: width, height: bounds.height)
+        }
     }
 }
 
@@ -88,12 +97,8 @@ struct ARViewContainer: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: FullscreenARContainerView, context: Context) {
-        if model.showCameraFeed {
-            uiView.arView.environment.background = .cameraFeed()
-        } else {
-            uiView.arView.environment.background = .color(.black)
-        }
-        uiView.applyAspectFillTransformIfNeeded()
+        uiView.setShowsCameraFeed(model.showCameraFeed)
+        uiView.setNeedsLayout()
     }
 
     static func dismantleUIView(_ uiView: FullscreenARContainerView, coordinator: Coordinator) {
@@ -114,13 +119,15 @@ struct ARViewContainer: UIViewRepresentable {
             self.container = container
             let arView = container.arView
             arView.session.delegate = self
+
             subscription = arView.scene.subscribe(to: SceneEvents.Update.self) { [weak self, weak container] _ in
                 guard let self, let container else { return }
                 guard let frame = container.arView.session.currentFrame else { return }
-                container.applyAspectFillTransformIfNeeded()
+                container.setNeedsLayout()
                 let viewSize = container.bounds.size
+                let arViewFrame = container.arView.frame
                 Task { @MainActor in
-                    self.model.updateOverlays(from: frame, viewportSize: viewSize)
+                    self.model.updateOverlays(from: frame, viewportSize: viewSize, arViewFrame: arViewFrame)
                 }
             }
         }

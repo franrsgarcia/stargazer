@@ -13,31 +13,24 @@ struct ContentView: View {
 
             skyOverlay
                 .ignoresSafeArea()
-
-            chromeOverlay
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black)
+        .overlay(alignment: .top) {
+            locationHeader
+                .padding(.horizontal, 16)
+                .padding(.top, 6)
+        }
+        .overlay(alignment: .bottom) {
+            bottomChrome
+                .padding(.horizontal, 16)
+                .padding(.bottom, 8)
         }
         .sheet(isPresented: $showSearchSheet) {
             searchSheet
         }
         .sheet(isPresented: $showVisibilitySheet) {
             visibilitySheet
-        }
-    }
-
-    /// UI chrome — respects safe areas; does not constrain the camera layer.
-    private var chromeOverlay: some View {
-        VStack(spacing: 0) {
-            locationHeader
-                .padding(.horizontal, 16)
-                .padding(.top, 6)
-
-            Color.clear
-                .allowsHitTesting(false)
-
-            bottomChrome
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 8)
         }
     }
 
