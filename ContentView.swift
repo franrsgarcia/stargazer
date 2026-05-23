@@ -196,11 +196,6 @@ struct ContentView: View {
                 VStack {
                     Spacer()
                     VStack(spacing: 10) {
-                        Capsule()
-                            .fill(Color.white.opacity(0.3))
-                            .frame(width: 32, height: 4)
-                            .padding(.top, 6)
-
                         HStack(alignment: .top, spacing: 12) {
                             Circle()
                                 .fill(selected.color)
@@ -212,11 +207,18 @@ struct ContentView: View {
                                         .foregroundColor(.white)
                                 )
 
-                            Text(selected.name)
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(.white)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.7)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(selected.name)
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.7)
+                                Text(selected.distanceText)
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.white.opacity(0.7))
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.7)
+                            }
 
                             Spacer()
 

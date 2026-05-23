@@ -43,16 +43,35 @@ final class StargazerModel: ObservableObject {
         }
 
         let date = Date()
-        bodies = CelestialCalculator.bodies(at: date, location: location.coordinate)
-        summaryText = String(format: "%.0f° N, %.0f° E • %@", location.coordinate.latitude, location.coordinate.longitude, DateFormatter.localizedString(from: date, dateStyle: .none, timeStyle: .short))
-        statusText = "Sky model updated"
+        let coordinate = location.coordinate
+        let selectedName = selectedBodyName
 
-        if let selectedName = selectedBodyName {
-            if let matching = bodies.first(where: { $0.name == selectedName }) {
-                selectedBodyID = matching.id
+        DispatchQueue.global(qos: .userInitiated).async {
+            let bodies = CelestialCalculator.bodies(at: date, location: coordinate)
+            var trajectorySamples: [(date: Date, az: Double, alt: Double, isFuture: Bool)] = []
+            var riseText: String? = nil
+            var setText: String? = nil
+
+            if let selectedName = selectedName {
+                trajectorySamples = CelestialCalculator.sampleTrajectory(name: selectedName, centerDate: date, location: coordinate, spanMinutes: 180, stepMinutes: 5)
+                let riseSetSamples = CelestialCalculator.sampleTrajectory(name: selectedName, centerDate: date, location: coordinate, spanMinutes: 1440, stepMinutes: 15)
+                let riseSet = self.deriveRiseSetStrings(from: riseSetSamples)
+                riseText = riseSet.rise
+                setText = riseSet.set
             }
-            selectedTrajectorySamples = CelestialCalculator.sampleTrajectory(name: selectedName, centerDate: date, location: location.coordinate, spanMinutes: 1440, stepMinutes: 5)
-            computeRiseSetTimes(name: selectedName, location: location.coordinate, centerDate: date)
+
+            DispatchQueue.main.async {
+                self.bodies = bodies
+                self.summaryText = String(format: "%.0f° N, %.0f° E • %@", location.coordinate.latitude, location.coordinate.longitude, DateFormatter.localizedString(from: date, dateStyle: .none, timeStyle: .short))
+                self.statusText = "Sky model updated"
+
+                if let selectedName = selectedName, let matching = bodies.first(where: { $0.name == selectedName }) {
+                    self.selectedBodyID = matching.id
+                }
+                self.selectedTrajectorySamples = trajectorySamples
+                self.selectedRiseText = riseText
+                self.selectedSetText = setText
+            }
         }
     }
 
@@ -73,15 +92,28 @@ final class StargazerModel: ObservableObject {
         selectedBodyID = body.id
         selectedBodyName = body.name
         guard let location = currentLocation else { return }
-        // Sample the trajectory over the next 24 hours with 5-minute steps
-        selectedTrajectorySamples = CelestialCalculator.sampleTrajectory(name: body.name, centerDate: Date(), location: location.coordinate, spanMinutes: 1440, stepMinutes: 5)
+        selectedTrajectorySamples = []
         selectedRiseText = nil
         selectedSetText = nil
-        computeRiseSetTimes(name: body.name, location: location.coordinate, centerDate: Date())
+
+        let coordinate = location.coordinate
+        let date = Date()
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let trajectory = CelestialCalculator.sampleTrajectory(name: body.name, centerDate: date, location: coordinate, spanMinutes: 180, stepMinutes: 5)
+            let riseSetSamples = CelestialCalculator.sampleTrajectory(name: body.name, centerDate: date, location: coordinate, spanMinutes: 1440, stepMinutes: 15)
+            let riseSet = self.deriveRiseSetStrings(from: riseSetSamples)
+
+            DispatchQueue.main.async {
+                self.selectedTrajectorySamples = trajectory
+                self.selectedRiseText = riseSet.rise
+                self.selectedSetText = riseSet.set
+            }
+        }
     }
 
     private func computeRiseSetTimes(name: String, location: CLLocationCoordinate2D, centerDate: Date) {
-        let samples = CelestialCalculator.sampleTrajectory(name: name, centerDate: centerDate, location: location, spanMinutes: 1440, stepMinutes: 5)
+        let samples = CelestialCalculator.sampleTrajectory(name: name, centerDate: centerDate, location: location, spanMinutes: 1440, stepMinutes: 15)
         var nextRise: Date?
         var nextSet: Date?
 
@@ -103,6 +135,31 @@ final class StargazerModel: ObservableObject {
 
         selectedRiseText = nextRise.map { DateFormatter.localizedString(from: $0, dateStyle: .short, timeStyle: .short) } ?? "Unknown"
         selectedSetText = nextSet.map { DateFormatter.localizedString(from: $0, dateStyle: .short, timeStyle: .short) } ?? "Unknown"
+    }
+
+    private func deriveRiseSetStrings(from samples: [(date: Date, az: Double, alt: Double, isFuture: Bool)]) -> (rise: String, set: String) {
+        var nextRise: Date?
+        var nextSet: Date?
+
+        for i in 1..<samples.count {
+            let previous = samples[i - 1]
+            let current = samples[i]
+
+            if nextRise == nil, previous.alt <= 0, current.alt > 0 {
+                nextRise = current.date
+            }
+            if nextSet == nil, previous.alt > 0, current.alt <= 0 {
+                nextSet = current.date
+            }
+
+            if nextRise != nil, nextSet != nil {
+                break
+            }
+        }
+
+        let riseText = nextRise.map { DateFormatter.localizedString(from: $0, dateStyle: .short, timeStyle: .short) } ?? "Unknown"
+        let setText = nextSet.map { DateFormatter.localizedString(from: $0, dateStyle: .short, timeStyle: .short) } ?? "Unknown"
+        return (rise: riseText, set: setText)
     }
 
     func updateOverlays(from frame: ARFrame, viewportSize: CGSize) {
