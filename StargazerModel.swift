@@ -288,14 +288,38 @@ final class StargazerModel: ObservableObject {
         point.y >= margin && point.y <= size.height - margin
     }
 
-    private func edgePlacement(toward target: CGPoint, in size: CGSize, margin: CGFloat = 40) -> (point: CGPoint, angle: Double) {
+    private func markerClearance(for body: CelestialBody) -> CGFloat {
+        switch body.type {
+        case .sun: return 58
+        case .moon: return 46
+        case .planet: return 34
+        }
+    }
+
+    private func offsetArrowPlacement(
+        pointingTo target: CGPoint,
+        approachFrom origin: CGPoint,
+        clearance: CGFloat
+    ) -> (point: CGPoint, angle: Double) {
+        let dx = target.x - origin.x
+        let dy = target.y - origin.y
+        let distance = max(hypot(dx, dy), 1)
+        let ux = dx / distance
+        let uy = dy / distance
+        let angle = atan2(dy, dx)
+        let point = CGPoint(x: target.x - ux * clearance, y: target.y - uy * clearance)
+        return (point, angle)
+    }
+
+    private func edgePlacement(toward target: CGPoint, in size: CGSize, margin: CGFloat = 44) -> (point: CGPoint, angle: Double) {
         let cx = size.width / 2
         let cy = size.height / 2
         let dx = target.x - cx
         let dy = target.y - cy
 
         if dx == 0 && dy == 0 {
-            return (CGPoint(x: cx, y: margin), .pi / 2)
+            let point = CGPoint(x: cx, y: margin)
+            return (point, atan2(target.y - point.y, target.x - point.x))
         }
 
         let halfW = max(size.width / 2 - margin, 1)
@@ -303,7 +327,9 @@ final class StargazerModel: ObservableObject {
         let scaleX = dx != 0 ? abs(halfW / dx) : .infinity
         let scaleY = dy != 0 ? abs(halfH / dy) : .infinity
         let scale = min(scaleX, scaleY)
-        return (CGPoint(x: cx + dx * scale, y: cy + dy * scale), atan2(dy, dx))
+        let edgePoint = CGPoint(x: cx + dx * scale, y: cy + dy * scale)
+        let angle = atan2(target.y - edgePoint.y, target.x - edgePoint.x)
+        return (edgePoint, angle)
     }
 
     func updateSearchGuidance(projectedPoint: CGPoint?) {
@@ -341,10 +367,18 @@ final class StargazerModel: ObservableObject {
         let distance = hypot(target.x - centerX, target.y - centerY)
         let onScreen = isOnScreen(target, in: size)
 
+        let viewportCenter = CGPoint(x: centerX, y: centerY)
+
         if onScreen {
+            let clearance = markerClearance(for: body)
+            let placement = offsetArrowPlacement(
+                pointingTo: target,
+                approachFrom: viewportCenter,
+                clearance: clearance
+            )
             searchArrow.isVisible = true
-            searchArrow.position = target
-            searchArrow.angle = atan2(target.y - centerY, target.x - centerX)
+            searchArrow.position = placement.point
+            searchArrow.angle = placement.angle
             searchArrow.mode = .onBody
 
             if distance < threshold {

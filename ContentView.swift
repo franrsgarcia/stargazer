@@ -3,9 +3,8 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject private var model: StargazerModel
     @State private var showSearchSheet = false
+    @State private var showVisibilitySheet = false
     @State private var searchQuery = ""
-
-    private let bottomBarHeight: CGFloat = 62
 
     private func horizonLineAngle(for points: [CGPoint]) -> Double {
         let screenCenterX = model.viewportSize.width / 2
@@ -49,10 +48,15 @@ struct ContentView: View {
         return min(fadeInOpacity, fadeOutOpacity) * baseOpacity
     }
 
-    private func labelPosition(for markerPoint: CGPoint) -> CGPoint {
-        let sideOffset: CGFloat = 30
-        let preferRight = markerPoint.x < model.viewportSize.width * 0.62
-        let x = preferRight ? markerPoint.x + sideOffset : markerPoint.x - sideOffset
+    private func labelPosition(for markerPoint: CGPoint, body: CelestialBody, isSelected: Bool) -> CGPoint {
+        let markerRadius = markerSize(for: body, isSelected: isSelected) / 2
+        let hitRadius: CGFloat = 22
+        let gap: CGFloat = 16
+        let labelHalfWidth = CGFloat(body.displayLabel.count) * 3.8 + 18
+        let horizontalOffset = hitRadius + markerRadius + gap + labelHalfWidth
+
+        let preferRight = markerPoint.x < model.viewportSize.width * 0.55
+        let x = preferRight ? markerPoint.x + horizontalOffset : markerPoint.x - horizontalOffset
         return CGPoint(x: x, y: markerPoint.y)
     }
 
@@ -139,21 +143,19 @@ struct ContentView: View {
             .lineLimit(1)
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
-            .background(.ultraThinMaterial)
-            .cornerRadius(8)
+            .modifier(GlassChipModifier(cornerRadius: 8))
     }
 
     @ViewBuilder
     private var searchGuidanceArrow: some View {
         if model.searchArrow.isVisible {
             Image(systemName: "arrow.up")
-                .font(.system(size: model.searchArrow.mode == .onBody ? 26 : 22, weight: .bold))
+                .font(.system(size: 22, weight: .bold))
                 .foregroundColor(.white)
                 .shadow(color: .black.opacity(0.55), radius: 5)
                 .rotationEffect(.radians(model.searchArrow.angle + .pi / 2))
                 .position(model.searchArrow.position)
                 .allowsHitTesting(false)
-                .transition(.opacity)
         }
     }
 
@@ -185,90 +187,87 @@ struct ContentView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            GeometryReader { geometry in
-                let size = geometry.size
+        GeometryReader { geometry in
+            ZStack {
+                ARViewContainer()
+                    .edgesIgnoringSafeArea(.all)
 
-                ZStack {
-                    ARViewContainer()
-                        .edgesIgnoringSafeArea(.all)
+                trajectoryView
+                    .allowsHitTesting(false)
 
-                    trajectoryView
-                        .allowsHitTesting(false)
+                ForEach(model.bodies) { body in
+                    if model.shouldRenderMarker(for: body), let point = model.bodyOverlays[body.name] {
+                        let isSelected = model.selectedBodyName == body.name
 
-                    ForEach(model.bodies) { body in
-                        if model.shouldRenderMarker(for: body), let point = model.bodyOverlays[body.name] {
-                            let isSelected = model.selectedBodyName == body.name
-
-                            bodyMarker(for: body, isSelected: isSelected)
-                                .position(point)
-                                .onTapGesture {
-                                    model.toggleSelection(of: body)
-                                }
-
-                            if isSelected && model.showInfoCard {
-                                bodyLabel(for: body)
-                                    .position(labelPosition(for: point))
+                        bodyMarker(for: body, isSelected: isSelected)
+                            .position(point)
+                            .onTapGesture {
+                                model.toggleSelection(of: body)
                             }
+
+                        if isSelected && model.showInfoCard {
+                            bodyLabel(for: body)
+                                .position(labelPosition(for: point, body: body, isSelected: isSelected))
                         }
                     }
-
-                    if model.showHorizon, model.horizonPoints.count > 1 {
-                        let pts = model.horizonPoints
-                        smoothPath(from: pts)
-                            .stroke(Color.white.opacity(0.9), style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
-                            .allowsHitTesting(false)
-
-                        let screenCenterX = size.width / 2
-                        let labelY = horizonLabelYPosition(for: pts)
-                        let angle = horizonLineAngle(for: pts)
-
-                        Text("HORIZON")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundColor(Color(white: 0.78))
-                            .fixedSize(horizontal: true, vertical: true)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 2)
-                            .background(Color.white)
-                            .cornerRadius(4)
-                            .rotationEffect(.radians(angle))
-                            .position(x: screenCenterX, y: labelY)
-                            .allowsHitTesting(false)
-                    }
-
-                    searchGuidanceArrow
-
-                    if model.showInfoCard,
-                       let selected = model.bodies.first(where: { $0.name == model.selectedBodyName }) {
-                        infoCard(for: selected)
-                    }
                 }
-                .onAppear {
-                    model.viewportSize = size
+
+                if model.showHorizon, model.horizonPoints.count > 1 {
+                    let pts = model.horizonPoints
+                    smoothPath(from: pts)
+                        .stroke(Color.white.opacity(0.9), style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
+                        .allowsHitTesting(false)
+
+                    let screenCenterX = geometry.size.width / 2
+                    let labelY = horizonLabelYPosition(for: pts)
+                    let angle = horizonLineAngle(for: pts)
+
+                    Text("HORIZON")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundColor(Color(white: 0.78))
+                        .fixedSize(horizontal: true, vertical: true)
+                        .padding(.horizontal, 3)
+                        .padding(.vertical, 2)
+                        .background(Color.white)
+                        .cornerRadius(3)
+                        .rotationEffect(.radians(angle))
+                        .position(x: screenCenterX, y: labelY)
+                        .allowsHitTesting(false)
                 }
-                .onChange(of: size) { newSize in
-                    model.viewportSize = newSize
+
+                searchGuidanceArrow
+
+                if model.showInfoCard,
+                   let selected = model.bodies.first(where: { $0.name == model.selectedBodyName }) {
+                    infoCard(for: selected)
                 }
             }
-
+            .onAppear {
+                model.viewportSize = geometry.size
+            }
+            .onChange(of: geometry.size) { newSize in
+                model.viewportSize = newSize
+            }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 10) {
             bottomMenuBar
         }
         .background(Color.black)
         .sheet(isPresented: $showSearchSheet) {
             searchSheet
         }
+        .sheet(isPresented: $showVisibilitySheet) {
+            visibilitySheet
+        }
     }
 
-    @ViewBuilder
     private var bottomMenuBar: some View {
         HStack(spacing: 0) {
             bottomBarItem(title: "Search", systemImage: "magnifyingglass") {
                 showSearchSheet = true
             }
 
-            Divider()
-                .frame(height: 28)
-                .background(Color.white.opacity(0.2))
+            barDivider
 
             bottomBarItem(
                 title: "AR",
@@ -277,40 +276,21 @@ struct ContentView: View {
                 model.showCameraFeed.toggle()
             }
 
-            Divider()
-                .frame(height: 28)
-                .background(Color.white.opacity(0.2))
+            barDivider
 
-            Menu {
-                visibilityCheckbox(title: "Stars", isOn: $model.showStars)
-                visibilityCheckbox(title: "Planets", isOn: $model.showPlanets)
-                visibilityCheckbox(title: "Moon", isOn: $model.showMoon)
-                visibilityCheckbox(title: "Sun", isOn: $model.showSun)
-                visibilityCheckbox(title: "Horizon", isOn: $model.showHorizon)
-            } label: {
-                bottomBarLabel(title: "Hide/Show", systemImage: "eye")
+            bottomBarItem(title: "Hide/Show", systemImage: "eye") {
+                showVisibilitySheet = true
             }
-            .frame(maxWidth: .infinity)
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 10)
+        .modifier(FloatingGlassBarModifier())
+        .padding(.horizontal, 20)
         .padding(.bottom, 4)
-        .frame(height: bottomBarHeight)
-        .frame(maxWidth: .infinity)
-        .modifier(LiquidGlassBarModifier())
-        .background(Color.black)
     }
 
-    private func visibilityCheckbox(title: String, isOn: Binding<Bool>) -> some View {
-        Button {
-            isOn.wrappedValue.toggle()
-        } label: {
-            Label {
-                Text(title)
-            } icon: {
-                Image(systemName: isOn.wrappedValue ? "checkmark.square.fill" : "square")
-            }
-        }
+    private var barDivider: some View {
+        Rectangle()
+            .fill(Color.white.opacity(0.18))
+            .frame(width: 1, height: 26)
     }
 
     private func bottomBarItem(title: String, systemImage: String, action: @escaping () -> Void) -> some View {
@@ -322,15 +302,61 @@ struct ContentView: View {
     }
 
     private func bottomBarLabel(title: String, systemImage: String) -> some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 3) {
             Image(systemName: systemImage)
-                .font(.system(size: 18, weight: .medium))
+                .font(.system(size: 17, weight: .medium))
             Text(title)
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 10, weight: .medium))
         }
         .foregroundColor(.white)
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 2)
+        .padding(.vertical, 6)
+    }
+
+    private var visibilitySheet: some View {
+        NavigationStack {
+            List {
+                visibilityRow(title: "Stars", isOn: $model.showStars)
+                visibilityRow(title: "Planets", isOn: $model.showPlanets)
+                visibilityRow(title: "Moon", isOn: $model.showMoon)
+                visibilityRow(title: "Sun", isOn: $model.showSun)
+                visibilityRow(title: "Horizon", isOn: $model.showHorizon)
+            }
+            .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
+            .navigationTitle("Hide / Show")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        showVisibilitySheet = false
+                    }
+                }
+            }
+        }
+        .modifier(SheetGlassBackgroundModifier())
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
+    }
+
+    @ViewBuilder
+    private func visibilityRow(title: String, isOn: Binding<Bool>) -> some View {
+        if #available(iOS 17.0, *) {
+            Toggle(title, isOn: isOn)
+                .toggleStyle(.checkbox)
+        } else {
+            Button {
+                isOn.wrappedValue.toggle()
+            } label: {
+                HStack {
+                    Text(title)
+                        .foregroundStyle(.primary)
+                    Spacer()
+                    Image(systemName: isOn.wrappedValue ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(isOn.wrappedValue ? Color.accentColor : Color.secondary)
+                }
+            }
+        }
     }
 
     private var searchSheet: some View {
@@ -354,6 +380,8 @@ struct ContentView: View {
                     }
                 }
             }
+            .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
             .searchable(text: $searchQuery, prompt: "Find a celestial body")
             .navigationTitle("Search")
             .navigationBarTitleDisplayMode(.inline)
@@ -365,7 +393,9 @@ struct ContentView: View {
                 }
             }
         }
+        .modifier(SheetGlassBackgroundModifier())
         .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 
     private var filteredSearchNames: [String] {
@@ -433,11 +463,9 @@ struct ContentView: View {
             .padding(.horizontal, 14)
             .padding(.top, 14)
             .padding(.bottom, 14)
-            .background(.ultraThinMaterial)
-            .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.06), lineWidth: 1))
-            .cornerRadius(20)
+            .modifier(GlassPanelModifier(cornerRadius: 20))
             .padding(.horizontal, 12)
-            .padding(.bottom, 12)
+            .padding(.bottom, 8)
         }
     }
 
@@ -458,22 +486,80 @@ struct ContentView: View {
                 .lineLimit(1)
         }
         .padding(8)
-        .background(.ultraThinMaterial)
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.06), lineWidth: 1))
-        .cornerRadius(12)
+        .modifier(GlassChipModifier(cornerRadius: 12))
     }
 }
 
-private struct LiquidGlassBarModifier: ViewModifier {
+// MARK: - Liquid Glass styling (iOS 26 with material fallback)
+
+private struct FloatingGlassBarModifier: ViewModifier {
     func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {
             content
-                .glassEffect(.regular.tint(.white.opacity(0.12)), in: .rect)
-                .overlay(Rectangle().frame(height: 0.5).foregroundColor(Color.white.opacity(0.15)), alignment: .top)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .glassEffect(.regular.interactive(), in: .capsule)
+        } else {
+            content
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay(Capsule().stroke(Color.white.opacity(0.14), lineWidth: 0.5))
+        }
+    }
+}
+
+private struct GlassPanelModifier: ViewModifier {
+    let cornerRadius: CGFloat
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content
+                .glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                )
         } else {
             content
                 .background(.ultraThinMaterial)
-                .overlay(Rectangle().frame(height: 0.5).foregroundColor(Color.white.opacity(0.12)), alignment: .top)
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius)
+                        .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                )
+                .cornerRadius(cornerRadius)
+        }
+    }
+}
+
+private struct GlassChipModifier: ViewModifier {
+    let cornerRadius: CGFloat
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content
+                .glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
+        } else {
+            content
+                .background(.ultraThinMaterial)
+                .cornerRadius(cornerRadius)
+        }
+    }
+}
+
+private struct SheetGlassBackgroundModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content
+                .background {
+                    Rectangle()
+                        .fill(.clear)
+                        .glassEffect(.regular, in: .rect)
+                        .ignoresSafeArea()
+                }
+        } else {
+            content
+                .background(.regularMaterial)
         }
     }
 }
