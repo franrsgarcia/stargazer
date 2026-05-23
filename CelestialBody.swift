@@ -22,6 +22,25 @@ struct CelestialBody: Identifiable, Equatable {
         name
     }
 
+    /// Subtle white-ish tint for sky markers, with hints of each body's real appearance.
+    var markerTint: Color {
+        switch type {
+        case .sun:
+            return Color.white
+        case .moon:
+            return Color(white: 0.96)
+        case .planet:
+            switch name {
+            case "Mercury": return Color(red: 0.96, green: 0.94, blue: 0.90)
+            case "Venus": return Color(red: 1.0, green: 0.97, blue: 0.86)
+            case "Mars": return Color(red: 1.0, green: 0.90, blue: 0.86)
+            case "Jupiter": return Color(red: 1.0, green: 0.93, blue: 0.80)
+            case "Saturn": return Color(red: 1.0, green: 0.95, blue: 0.78)
+            default: return Color(white: 0.94)
+            }
+        }
+    }
+
     var typeName: String {
         switch type {
         case .sun: return "Star"

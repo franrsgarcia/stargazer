@@ -49,7 +49,7 @@ struct ContentView: View {
 
     @ViewBuilder
     private var trajectoryView: some View {
-        if let selected = model.bodies.first(where: { $0.id == model.selectedBodyID }) {
+        if model.bodies.first(where: { $0.id == model.selectedBodyID }) != nil {
             // Past trajectory with fade-out at both ends
             if !model.pastTrajectoryPoints.isEmpty {
                 let pts = model.pastTrajectoryPoints
@@ -88,6 +88,50 @@ struct ContentView: View {
         }
     }
 
+    private func markerSize(for body: CelestialBody, isSelected: Bool) -> CGFloat {
+        switch body.type {
+        case .sun: return isSelected ? 48 : 36
+        case .moon: return isSelected ? 36 : 28
+        case .planet: return isSelected ? 9 : 7
+        }
+    }
+
+    @ViewBuilder
+    private func bodyMarker(for body: CelestialBody, isSelected: Bool) -> some View {
+        let isSun = body.type == .sun
+        let isMoon = body.type == .moon
+        let isPlanet = body.type == .planet
+        let size = markerSize(for: body, isSelected: isSelected)
+        let tint = body.markerTint
+
+        ZStack {
+            if isPlanet {
+                Circle()
+                    .fill(tint.opacity(0.35))
+                    .frame(width: size * 2.8, height: size * 2.8)
+                    .blur(radius: 6)
+            }
+
+            Circle()
+                .fill(tint.opacity(isSun || isMoon ? 0.95 : 0.92))
+                .frame(width: size, height: size)
+                .shadow(color: tint.opacity(isSun ? 0.9 : isMoon ? 0.75 : 0.65), radius: isSun ? 18 : isMoon ? 12 : 10)
+                .shadow(color: tint.opacity(isPlanet ? 0.4 : 0.25), radius: isPlanet ? 16 : 8)
+
+            if isSelected {
+                Text(body.displayLabel)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.white)
+                    .padding(6)
+                    .background(.ultraThinMaterial)
+                    .cornerRadius(8)
+            }
+        }
+        .frame(width: 44, height: 44)
+        .contentShape(Circle())
+    }
+
     // Produce a smooth path from a series of points using quadratic segments
     private func smoothPath(from pts: [CGPoint]) -> Path {
         var path = Path()
@@ -124,49 +168,27 @@ struct ContentView: View {
 
             // Top status box removed; AR content fills the view.
 
+            trajectoryView
+                .allowsHitTesting(false)
+
             ForEach(model.bodies) { body in
                 if let point = model.bodyOverlays[body.id], body.isVisible {
                     let isSelected = model.selectedBodyID == body.id
-                    let isSun = body.type == .sun
-                    let isMoon = body.type == .moon
-                    let size: CGFloat = isSun ? (isSelected ? 48 : 36) : (isMoon ? (isSelected ? 36 : 28) : (isSelected ? 14 : 10))
 
-                    ZStack {
-                        Circle()
-                            .fill(Color.white.opacity(isSun || isMoon ? 0.95 : 0.85))
-                            .frame(width: size, height: size)
-                            .shadow(color: Color.white.opacity(isSun ? 0.9 : isMoon ? 0.7 : 0.5), radius: isSun ? 18 : isMoon ? 12 : 6)
-
-                        if !isSun && !isMoon {
-                            Circle()
-                                .fill(Color.white.opacity(0.6))
-                                .frame(width: size * 0.6, height: size * 0.6)
+                    bodyMarker(for: body, isSelected: isSelected)
+                        .position(point)
+                        .onTapGesture {
+                            model.toggleSelection(of: body)
                         }
-
-                        if isSelected {
-                            Text(body.displayLabel)
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.white)
-                                .padding(6)
-                                .background(.ultraThinMaterial)
-                                .cornerRadius(8)
-                        }
-                    }
-                    .position(point)
-                    .onTapGesture {
-                        model.toggleSelection(of: body)
-                    }
                 }
             }
-
-            trajectoryView
 
             // Draw horizon reference line
             if model.showHorizon, model.horizonPoints.count > 1 {
                 let pts = model.horizonPoints
                 smoothPath(from: pts)
                     .stroke(Color.white.opacity(0.9), style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
+                    .allowsHitTesting(false)
 
                 // Horizon label: centered horizontally, moves vertically with the horizon line, rotates with it
                 let screenCenterX = UIScreen.main.bounds.midX
@@ -205,7 +227,7 @@ struct ContentView: View {
             if let selected = model.bodies.first(where: { $0.id == model.selectedBodyID }) {
                 VStack {
                     Spacer()
-                    VStack(spacing: 10) {
+                    VStack(spacing: 12) {
                         HStack(alignment: .top, spacing: 12) {
                             Circle()
                                 .fill(selected.color)
@@ -255,8 +277,9 @@ struct ContentView: View {
                         }
                         .padding(.horizontal, 2)
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.bottom, 12)
+                    .padding(.horizontal, 14)
+                    .padding(.top, 14)
+                    .padding(.bottom, 14)
                     .background(.ultraThinMaterial)
                     .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.06), lineWidth: 1))
                     .cornerRadius(20)
