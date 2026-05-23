@@ -66,31 +66,46 @@ struct ContentView: View {
             }
 
             if let selected = model.bodies.first(where: { $0.id == model.selectedBodyID }) {
+                // Past trajectory with fade-out at both ends
                 if !model.pastTrajectoryPoints.isEmpty {
-                    Path { path in
-                        let pts = model.pastTrajectoryPoints
-                        guard pts.count > 1 else { return }
-                        path.move(to: pts[0])
-                        for p in pts.dropFirst() { path.addLine(to: p) }
+                    let pts = model.pastTrajectoryPoints
+                    if pts.count > 1 {
+                        ForEach(0..<(pts.count - 1), id: \.self) { i in
+                            let start = pts[i]
+                            let end = pts[i + 1]
+                            let progress = Double(i) / Double(pts.count)
+                            let fadeInOpacity = progress < 0.2 ? progress / 0.2 : 1.0
+                            let fadeOutOpacity = (1.0 - progress) < 0.2 ? (1.0 - progress) / 0.2 : 1.0
+                            let opacity = min(fadeInOpacity, fadeOutOpacity) * 0.35
+                            
+                            Path { path in
+                                path.move(to: start)
+                                path.addLine(to: end)
+                            }
+                            .stroke(selected.color.opacity(opacity), lineWidth: 1)
+                        }
                     }
-                    .stroke(selected.color.opacity(0.35), lineWidth: 1)
                 }
 
+                // Future trajectory with fade-out at both ends
                 if !model.futureTrajectoryPoints.isEmpty {
-                    Path { path in
-                        let pts = model.futureTrajectoryPoints
-                        guard pts.count > 1 else { return }
-                        path.move(to: pts[0])
-                        for p in pts.dropFirst() { path.addLine(to: p) }
+                    let pts = model.futureTrajectoryPoints
+                    if pts.count > 1 {
+                        ForEach(0..<(pts.count - 1), id: \.self) { i in
+                            let start = pts[i]
+                            let end = pts[i + 1]
+                            let progress = Double(i) / Double(pts.count)
+                            let fadeInOpacity = progress < 0.2 ? progress / 0.2 : 1.0
+                            let fadeOutOpacity = (1.0 - progress) < 0.2 ? (1.0 - progress) / 0.2 : 1.0
+                            let opacity = min(fadeInOpacity, fadeOutOpacity)
+                            
+                            Path { path in
+                                path.move(to: start)
+                                path.addLine(to: end)
+                            }
+                            .stroke(selected.color.opacity(opacity), lineWidth: 2)
+                        }
                     }
-                    .stroke(selected.color, lineWidth: 2)
-                }
-
-                ForEach(Array(model.futureTrajectoryPoints.enumerated()), id: \.offset) { idx, p in
-                    Circle()
-                        .fill(selected.color.opacity(0.9))
-                        .frame(width: 6, height: 6)
-                        .position(p)
                 }
             }
 
@@ -100,26 +115,33 @@ struct ContentView: View {
                 smoothPath(from: pts)
                     .stroke(Color.white.opacity(0.9), style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
 
-                // Horizon label placed at midpoint of the horizon samples, vertically centered on the line
-                let midIndex = pts.count / 2
-                if midIndex < pts.count {
-                    let prevIndex = max(midIndex - 1, 0)
-                    let nextIndex = min(midIndex + 1, pts.count - 1)
-                    let labelPoint = pts[midIndex]
-                    let prevPoint = pts[prevIndex]
-                    let nextPoint = pts[nextIndex]
-                    let angle = atan2(nextPoint.y - prevPoint.y, nextPoint.x - prevPoint.x)
-                    Text("HORIZON")
-                        .font(.caption2)
-                        .fontWeight(.semibold)
-                        .foregroundColor(Color.black.opacity(0.9))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(Color.white.opacity(0.9))
-                        .cornerRadius(10)
-                        .rotationEffect(.radians(Double(angle)))
-                        .position(x: labelPoint.x, y: labelPoint.y)
+                // Horizon label: centered horizontally, moves vertically with the horizon line
+                let screenCenterX = UIScreen.main.bounds.midX
+                var labelY: CGFloat = UIScreen.main.bounds.midY
+                
+                // Find the y position at the screen's horizontal center by interpolating horizon points
+                if let minX = pts.map(\.x).min(), let maxX = pts.map(\.x).max() {
+                    if screenCenterX >= minX && screenCenterX <= maxX {
+                        // Interpolate to find y at screenCenterX
+                        for i in 0..<(pts.count - 1) {
+                            if pts[i].x <= screenCenterX && screenCenterX <= pts[i + 1].x {
+                                let t = (screenCenterX - pts[i].x) / (pts[i + 1].x - pts[i].x)
+                                labelY = pts[i].y + t * (pts[i + 1].y - pts[i].y)
+                                break
+                            }
+                        }
+                    }
                 }
+                
+                Text("HORIZON")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(Color.black.opacity(0.9))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color.white.opacity(0.9))
+                    .cornerRadius(6)
+                    .position(x: screenCenterX, y: labelY)
             }
 
             // Horizon toggle button (top-right)
