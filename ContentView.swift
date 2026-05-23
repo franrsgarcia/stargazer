@@ -175,7 +175,7 @@ struct ContentView: View {
                 
                 Text("HORIZON")
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(Color(white: 0.95))
+                    .foregroundColor(Color(white: 0.78))
                     .padding(.horizontal, 4)
                     .padding(.vertical, 2)
                     .background(Color.white)
