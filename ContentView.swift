@@ -221,6 +221,4 @@ struct ContentView: View {
         .background(Color.white.opacity(0.08))
         .cornerRadius(16)
     }
-        }
-    }
 }

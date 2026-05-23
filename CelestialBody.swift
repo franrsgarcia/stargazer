@@ -80,4 +80,5 @@ struct CelestialBody: Identifiable, Equatable {
             return "Visible now"
         }
         return "Below horizon"
+    }
 }
