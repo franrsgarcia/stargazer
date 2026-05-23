@@ -68,7 +68,6 @@
         000000000000000000000016 /* CelestialBody.swift */,
         000000000000000000000017 /* CelestialCalculator.swift */,
         000000000000000000000019 /* StargazerModel.swift */,
-        000000000000000000000027 /* SkyCalibration.swift */,
         000000000000000000000018 /* Info.plist */,
       );
       path = "";
@@ -303,7 +302,6 @@
         000000000000000000000023 /* CelestialBody.swift in Sources */,
         000000000000000000000024 /* CelestialCalculator.swift in Sources */,
         000000000000000000000026 /* StargazerModel.swift in Sources */,
-        000000000000000000000028 /* SkyCalibration.swift in Sources */,
       );
       runOnlyForDeploymentPostprocessing = 0;
     };
@@ -348,16 +346,6 @@
     000000000000000000000026 /* StargazerModel.swift in Sources */ = {
       isa = PBXBuildFile;
       fileRef = 000000000000000000000019 /* StargazerModel.swift */;
-    };
-    000000000000000000000028 /* SkyCalibration.swift in Sources */ = {
-      isa = PBXBuildFile;
-      fileRef = 000000000000000000000027 /* SkyCalibration.swift */;
-    };
-    000000000000000000000027 /* SkyCalibration.swift */ = {
-      isa = PBXFileReference;
-      lastKnownFileType = sourcecode.swift;
-      path = SkyCalibration.swift;
-      sourceTree = "<group>";
     };
     000000000000000000000012 /* StargazerApp.swift */ = {
       isa = PBXFileReference;

@@ -10,14 +10,9 @@ struct CelestialCalculator {
         return [sun, moon] + planets
     }
 
-    static func directionVector(
-        azimuth: Double,
-        altitude: Double,
-        azimuthOffset: Double = 0,
-        altitudeOffset: Double = 0
-    ) -> SIMD3<Float> {
-        let az = degreesToRadians(normalizeAngle(azimuth + azimuthOffset))
-        let alt = degreesToRadians(altitude + altitudeOffset)
+    static func directionVector(azimuth: Double, altitude: Double) -> SIMD3<Float> {
+        let az = degreesToRadians(normalizeAngle(azimuth))
+        let alt = degreesToRadians(altitude)
         let x = Float(cos(alt) * sin(az))
         let y = Float(sin(alt))
         let z = Float(-cos(alt) * cos(az))

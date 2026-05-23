@@ -55,16 +55,10 @@ final class StargazerModel: ObservableObject {
     @Published var viewportSize: CGSize = UIScreen.main.bounds.size
     @Published var locationLabel = "Locating..."
     @Published var cardinalMarkers: [CardinalMarker] = []
-    @Published var isCalibrated = false
-    @Published var isCalibrating = false
-    @Published var calibrationMessage = ""
 
     private var selectedTrajectorySamples: [(date: Date, az: Double, alt: Double, isFuture: Bool)] = []
-    private var azimuthCalibrationOffset: Double = 0
-    private var altitudeCalibrationOffset: Double = 0
-    private var lastCameraTransform: simd_float4x4 = matrix_identity_float4x4
-    private var lastGeocodedCoordinate: CLLocationCoordinate2D?
     private let geocoder = CLGeocoder()
+    private var lastGeocodedCoordinate: CLLocationCoordinate2D?
     private var smoothedOverlays: [String: CGPoint] = [:]
     private var overlayInFront: [String: Bool] = [:]
     private var searchGuidanceComplete = false
@@ -83,61 +77,6 @@ final class StargazerModel: ObservableObject {
 
     init() {
         locationManager.delegate = self
-        let saved = SkyCalibration.load()
-        azimuthCalibrationOffset = saved.azimuth
-        altitudeCalibrationOffset = saved.altitude
-        isCalibrated = saved.isCalibrated
-    }
-
-    func beginCalibration() {
-        isCalibrating = true
-        calibrationMessage = ""
-    }
-
-    func cancelCalibration() {
-        isCalibrating = false
-    }
-
-    func calibrateFromTarget() {
-        guard let sun = bodies.first(where: { $0.name == "Sun" }),
-              let moon = bodies.first(where: { $0.name == "Moon" }) else {
-            calibrationMessage = "Sun and Moon positions are not available yet."
-            return
-        }
-
-        let deviceAzimuth = SkyCalibration.cameraAzimuthDegrees(from: lastCameraTransform)
-        let deviceAltitude = SkyCalibration.cameraAltitudeDegrees(from: lastCameraTransform)
-
-        let sunDistance = SkyCalibration.angularSeparation(
-            azimuthA: deviceAzimuth,
-            altitudeA: deviceAltitude,
-            azimuthB: sun.azimuth,
-            altitudeB: sun.altitude
-        )
-        let moonDistance = SkyCalibration.angularSeparation(
-            azimuthA: deviceAzimuth,
-            altitudeA: deviceAltitude,
-            azimuthB: moon.azimuth,
-            altitudeB: moon.altitude
-        )
-
-        let target = sunDistance <= moonDistance ? sun : moon
-        azimuthCalibrationOffset = SkyCalibration.shortestSignedDelta(from: deviceAzimuth, to: target.azimuth)
-        altitudeCalibrationOffset = target.altitude - deviceAltitude
-        SkyCalibration.save(azimuthOffset: azimuthCalibrationOffset, altitudeOffset: altitudeCalibrationOffset)
-        isCalibrated = true
-        isCalibrating = false
-        calibrationMessage = "Aligned to the \(target.name)."
-        refreshCelestialData()
-    }
-
-    func resetCalibration() {
-        azimuthCalibrationOffset = 0
-        altitudeCalibrationOffset = 0
-        SkyCalibration.reset()
-        isCalibrated = false
-        calibrationMessage = "Calibration reset."
-        refreshCelestialData()
     }
 
     private func updateLocationLabel(for location: CLLocation) {
@@ -353,12 +292,7 @@ final class StargazerModel: ObservableObject {
         projectionMatrix: simd_float4x4,
         viewportSize: CGSize
     ) -> (point: CGPoint, cameraZ: Float)? {
-        let direction = CelestialCalculator.directionVector(
-            azimuth: azimuth,
-            altitude: altitude,
-            azimuthOffset: azimuthCalibrationOffset,
-            altitudeOffset: altitudeCalibrationOffset
-        )
+        let direction = CelestialCalculator.directionVector(azimuth: azimuth, altitude: altitude)
         let cameraPoint = viewMatrix * SIMD4<Float>(direction, 0)
         let cameraZ = cameraPoint.z
 
@@ -606,7 +540,6 @@ final class StargazerModel: ObservableObject {
         let projectionMatrix = frame.camera.projectionMatrix(for: .portrait, viewportSize: viewportSize, zNear: 0.01, zFar: 1000)
         lastViewMatrix = viewMatrix
         lastProjectionMatrix = projectionMatrix
-        lastCameraTransform = frame.camera.transform
 
         var overlays: [String: CGPoint] = [:]
 
@@ -692,6 +625,7 @@ final class StargazerModel: ObservableObject {
         futureTrajectorySegments = futureSegments
         horizonPoints = horizonPts
         cardinalMarkers = cardinals
+        viewportSize = viewportSize
 
         let searchPoint = selectedBodyName.flatMap { name in
             bodies.first(where: { $0.name == name }).flatMap { body in
