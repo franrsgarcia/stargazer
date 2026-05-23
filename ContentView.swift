@@ -91,7 +91,12 @@ struct ContentView: View {
                 // Horizon label placed at midpoint of the horizon samples, vertically centered on the line
                 let midIndex = pts.count / 2
                 if midIndex < pts.count {
+                    let prevIndex = max(midIndex - 1, 0)
+                    let nextIndex = min(midIndex + 1, pts.count - 1)
                     let labelPoint = pts[midIndex]
+                    let prevPoint = pts[prevIndex]
+                    let nextPoint = pts[nextIndex]
+                    let angle = atan2(nextPoint.y - prevPoint.y, nextPoint.x - prevPoint.x)
                     Text("HORIZON")
                         .font(.caption2)
                         .fontWeight(.semibold)
@@ -100,6 +105,7 @@ struct ContentView: View {
                         .padding(.vertical, 6)
                         .background(Color.white.opacity(0.9))
                         .cornerRadius(10)
+                        .rotationEffect(.radians(Double(angle)))
                         .position(x: labelPoint.x, y: labelPoint.y)
                 }
             }
