@@ -15,7 +15,7 @@ struct CelestialCalculator {
         let alt = degreesToRadians(altitude)
         let x = Float(cos(alt) * sin(az))
         let y = Float(sin(alt))
-        let z = Float(cos(alt) * cos(az))
+        let z = Float(-cos(alt) * cos(az))
         return SIMD3<Float>(x, y, z)
     }
 

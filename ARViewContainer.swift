@@ -37,7 +37,7 @@ struct ARViewContainer: UIViewRepresentable {
         uiView.session.pause()
     }
 
-    class Coordinator {
+    class Coordinator: NSObject, ARSessionDelegate {
         private let model: StargazerModel
         private var subscription: Cancellable?
 
@@ -46,6 +46,7 @@ struct ARViewContainer: UIViewRepresentable {
         }
 
         func install(on arView: ARView) {
+            arView.session.delegate = self
             subscription = arView.scene.subscribe(to: SceneEvents.Update.self) { [weak self, weak arView] _ in
                 guard let self = self, let arView = arView, let frame = arView.session.currentFrame else { return }
                 let viewSize = arView.bounds.size
@@ -56,6 +57,27 @@ struct ARViewContainer: UIViewRepresentable {
         func stopObserving() {
             subscription?.cancel()
             subscription = nil
+        }
+
+        func session(_ session: ARSession, didFailWithError error: Error) {
+            DispatchQueue.main.async {
+                self.model.statusText = "AR session failed: \(error.localizedDescription)"
+            }
+        }
+
+        func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
+            switch camera.trackingState {
+            case .normal:
+                break
+            case .notAvailable:
+                DispatchQueue.main.async {
+                    self.model.statusText = "AR camera not available"
+                }
+            case .limited(let reason):
+                DispatchQueue.main.async {
+                    self.model.statusText = "AR tracking limited: \(reason)"
+                }
+            }
         }
     }
 }
