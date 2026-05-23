@@ -8,25 +8,54 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            ARViewContainer()
-                .ignoresSafeArea()
-
-            skyOverlay
-                .ignoresSafeArea()
-        }
-        .overlay(alignment: .top) {
-            locationHeader
-                .padding(.horizontal, 16)
-                .padding(.top, 6)
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            bottomChrome
+            cameraLayer
+            chromeLayer
         }
         .sheet(isPresented: $showSearchSheet) {
             searchSheet
         }
         .sheet(isPresented: $showVisibilitySheet) {
             visibilitySheet
+        }
+    }
+
+    /// Full-screen AR feed and sky markers — never inset or constrained by chrome.
+    private var cameraLayer: some View {
+        ZStack {
+            ARViewContainer()
+                .ignoresSafeArea()
+
+            skyOverlay
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea()
+        .background {
+            GeometryReader { proxy in
+                Color.clear
+                    .onAppear {
+                        model.viewportSize = proxy.size
+                    }
+                    .onChange(of: proxy.size) { newSize in
+                        model.viewportSize = newSize
+                    }
+            }
+        }
+    }
+
+    /// Floating controls — respects safe areas and does not affect camera layout.
+    private var chromeLayer: some View {
+        VStack(spacing: 0) {
+            locationHeader
+                .padding(.horizontal, 16)
+                .padding(.top, 6)
+
+            Color.clear
+                .allowsHitTesting(false)
+
+            bottomChrome
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 8)
         }
     }
 
@@ -38,9 +67,6 @@ struct ContentView: View {
             }
             bottomMenuBar
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
-        .padding(.bottom, 8)
     }
 
     // MARK: - Sky overlay (AR annotations)

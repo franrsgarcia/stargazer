@@ -53,7 +53,13 @@ struct ARViewContainer: UIViewRepresentable {
             arView.session.delegate = self
             subscription = arView.scene.subscribe(to: SceneEvents.Update.self) { [weak self, weak arView] _ in
                 guard let self = self, let arView = arView, let frame = arView.session.currentFrame else { return }
-                let viewSize = arView.bounds.size
+                let modelSize = self.model.viewportSize
+                let viewSize: CGSize
+                if modelSize.width > 0, modelSize.height > 0 {
+                    viewSize = modelSize
+                } else {
+                    viewSize = arView.bounds.size
+                }
                 Task { @MainActor in
                     self.model.updateOverlays(from: frame, viewportSize: viewSize)
                 }

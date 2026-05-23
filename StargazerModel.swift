@@ -625,7 +625,6 @@ final class StargazerModel: ObservableObject {
         futureTrajectorySegments = futureSegments
         horizonPoints = horizonPts
         cardinalMarkers = cardinals
-        self.viewportSize = viewportSize
 
         let searchPoint = selectedBodyName.flatMap { name in
             bodies.first(where: { $0.name == name }).flatMap { body in
