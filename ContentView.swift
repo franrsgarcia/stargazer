@@ -63,7 +63,7 @@ struct ContentView: View {
                             path.move(to: start)
                             path.addLine(to: end)
                         }
-                        .stroke(selected.color.opacity(opacity), lineWidth: 1)
+                        .stroke(Color.white.opacity(opacity), lineWidth: 1)
                     }
                 }
             }
@@ -81,7 +81,7 @@ struct ContentView: View {
                             path.move(to: start)
                             path.addLine(to: end)
                         }
-                        .stroke(selected.color.opacity(opacity), lineWidth: 2)
+                        .stroke(Color.white.opacity(opacity), lineWidth: 2)
                     }
                 }
             }
@@ -127,21 +127,31 @@ struct ContentView: View {
             ForEach(model.bodies) { body in
                 if let point = model.bodyOverlays[body.id], body.isVisible {
                     let isSelected = model.selectedBodyID == body.id
+                    let isSun = body.type == .sun
+                    let isMoon = body.type == .moon
+                    let size: CGFloat = isSun ? (isSelected ? 48 : 36) : (isMoon ? (isSelected ? 36 : 28) : (isSelected ? 14 : 10))
+
                     ZStack {
-                        VStack(spacing: 4) {
+                        Circle()
+                            .fill(Color.white.opacity(isSun || isMoon ? 0.95 : 0.85))
+                            .frame(width: size, height: size)
+                            .shadow(color: Color.white.opacity(isSun ? 0.9 : isMoon ? 0.7 : 0.5), radius: isSun ? 18 : isMoon ? 12 : 6)
+
+                        if !isSun && !isMoon {
                             Circle()
-                                .fill(body.color)
-                                .frame(width: isSelected ? 18 : 12, height: isSelected ? 18 : 12)
-                                .shadow(radius: 3)
+                                .fill(Color.white.opacity(0.6))
+                                .frame(width: size * 0.6, height: size * 0.6)
+                        }
+
+                        if isSelected {
                             Text(body.displayLabel)
-                                .font(.caption2)
+                                .font(.caption)
                                 .fontWeight(.semibold)
                                 .foregroundColor(.white)
                                 .padding(6)
-                                .background(body.color.opacity(0.24))
-                                .cornerRadius(10)
+                                .background(.ultraThinMaterial)
+                                .cornerRadius(8)
                         }
-                        .shadow(radius: 4)
                     }
                     .position(point)
                     .onTapGesture {
@@ -245,12 +255,13 @@ struct ContentView: View {
                         }
                         .padding(.horizontal, 2)
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 16)
-                    .background(Color.black.opacity(0.55))
-                    .cornerRadius(20)
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, 10)
                     .padding(.bottom, 12)
+                    .background(.ultraThinMaterial)
+                    .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.06), lineWidth: 1))
+                    .cornerRadius(20)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 10)
                 }
                 .animation(.easeInOut, value: model.selectedBodyID)
             }
@@ -274,7 +285,8 @@ struct ContentView: View {
                 .minimumScaleFactor(0.6)
         }
         .padding(8)
-        .background(Color.white.opacity(0.08))
+        .background(.ultraThinMaterial)
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.06), lineWidth: 1))
         .cornerRadius(12)
     }
 }

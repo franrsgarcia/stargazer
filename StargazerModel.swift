@@ -53,7 +53,7 @@ final class StargazerModel: ObservableObject {
             var setText: String? = nil
 
             if let selectedName = selectedName {
-                trajectorySamples = CelestialCalculator.sampleTrajectory(name: selectedName, centerDate: date, location: coordinate, spanMinutes: 180, stepMinutes: 5)
+                trajectorySamples = CelestialCalculator.sampleTrajectory(name: selectedName, centerDate: date, location: coordinate, spanMinutes: 240, stepMinutes: 5)
                 let riseSetSamples = CelestialCalculator.sampleTrajectory(name: selectedName, centerDate: date, location: coordinate, spanMinutes: 1440, stepMinutes: 15)
                 let riseSet = self.deriveRiseSetStrings(from: riseSetSamples)
                 riseText = riseSet.rise
@@ -100,7 +100,7 @@ final class StargazerModel: ObservableObject {
         let date = Date()
 
         DispatchQueue.global(qos: .userInitiated).async {
-            let trajectory = CelestialCalculator.sampleTrajectory(name: body.name, centerDate: date, location: coordinate, spanMinutes: 180, stepMinutes: 5)
+            let trajectory = CelestialCalculator.sampleTrajectory(name: body.name, centerDate: date, location: coordinate, spanMinutes: 240, stepMinutes: 5)
             let riseSetSamples = CelestialCalculator.sampleTrajectory(name: body.name, centerDate: date, location: coordinate, spanMinutes: 1440, stepMinutes: 15)
             let riseSet = self.deriveRiseSetStrings(from: riseSetSamples)
 
