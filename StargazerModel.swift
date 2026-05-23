@@ -63,6 +63,8 @@ final class StargazerModel: ObservableObject {
     private var smoothedOverlays: [String: CGPoint] = [:]
     private var searchGuidanceComplete = false
     private var lastYawCorrection: Float = 0
+    private var compassYawOffset: Float = 0
+    private var shouldLatchCompassOffset = false
 
     private let locationManager = LocationManager()
     private var currentLocation: CLLocation?
@@ -140,6 +142,8 @@ final class StargazerModel: ObservableObject {
     func resetCompassAlignment() {
         locationManager.resetHeading()
         compassResetToken = UUID()
+        compassYawOffset = 0
+        shouldLatchCompassOffset = true
         statusText = "Compass realigned"
     }
 
@@ -303,16 +307,28 @@ final class StargazerModel: ObservableObject {
         return nil
     }
 
-    /// Align astronomical azimuth with Core Location compass heading instead of drifting ARKit north.
-    private func compassYawCorrection(for frame: ARFrame) -> Float {
+    /// Horizontal camera heading in ARKit world space (0 = north, π/2 = east).
+    private func cameraHeadingRadians(from frame: ARFrame) -> Float {
+        let transform = frame.camera.transform
+        let forward = SIMD3<Float>(-transform.columns.2.x, 0, -transform.columns.2.z)
+        let length = simd_length(forward)
+        guard length > 0.001 else { return 0 }
+        let normalized = forward / length
+        return atan2(normalized.x, -normalized.z)
+    }
+
+    /// Snap a fixed north offset when the user resets — device rotation stays in the AR view matrix.
+    private func latchCompassOffsetIfNeeded(for frame: ARFrame) {
+        guard shouldLatchCompassOffset else { return }
         guard let heading = currentHeading,
               let compassDegrees = compassHeadingDegrees(from: heading) else {
-            return 0
+            return
         }
 
         let compassRadians = Float(compassDegrees * .pi / 180)
-        let arkitYaw = frame.camera.eulerAngles.y
-        return compassRadians - arkitYaw
+        let arkitHeading = cameraHeadingRadians(from: frame)
+        compassYawOffset = compassRadians - arkitHeading
+        shouldLatchCompassOffset = false
     }
 
     private func rotateAroundY(_ vector: SIMD3<Float>, by angle: Float) -> SIMD3<Float> {
@@ -579,7 +595,8 @@ final class StargazerModel: ObservableObject {
         let projectionOffset = CGPoint(x: arViewFrame?.origin.x ?? 0, y: arViewFrame?.origin.y ?? 0)
         let viewMatrix = frame.camera.viewMatrix(for: .portrait)
         let projectionMatrix = frame.camera.projectionMatrix(for: .portrait, viewportSize: projectionViewport, zNear: 0.01, zFar: 1000)
-        let yawCorrection = compassYawCorrection(for: frame)
+        latchCompassOffsetIfNeeded(for: frame)
+        let yawCorrection = compassYawOffset
         lastViewMatrix = viewMatrix
         lastProjectionMatrix = projectionMatrix
         lastYawCorrection = yawCorrection
