@@ -582,7 +582,7 @@ final class StargazerModel: ObservableObject {
             if abs(dx) < 0.001 {
                 let distance = abs(x - p0.x)
                 if distance < 8 {
-                    let candidate = (y: (p0.y + p1.y) / 2, angle: atan2(dy, max(dx, 0.001)), score: distance)
+                    let candidate = (y: (p0.y + p1.y) / 2, angle: Double(atan2(dy, max(dx, 0.001))), score: distance)
                     if bestDirect == nil || candidate.score < bestDirect!.score {
                         bestDirect = candidate
                     }
@@ -601,7 +601,7 @@ final class StargazerModel: ObservableObject {
             let y = p0.y + clampedT * dy
             let score = abs(t - clampedT)
             if bestDirect == nil || score < bestDirect!.score {
-                bestDirect = (y, atan2(dy, dx), score)
+                bestDirect = (y, Double(atan2(dy, dx)), score)
             }
         }
 
@@ -622,7 +622,7 @@ final class StargazerModel: ObservableObject {
             if distance < nearestDistance {
                 nearestDistance = distance
                 nearest = closest
-                nearestAngle = atan2(p1.y - p0.y, p1.x - p0.x)
+                nearestAngle = Double(atan2(p1.y - p0.y, p1.x - p0.x))
             }
         }
 
