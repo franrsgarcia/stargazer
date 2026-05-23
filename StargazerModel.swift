@@ -53,7 +53,7 @@ final class StargazerModel: ObservableObject {
         selectedBodyID = body.id
         guard let location = currentLocation else { return }
         // Sample the trajectory ±3 hours with 3-minute steps
-        selectedTrajectoryAngles = CelestialCalculator.samplePositions(name: body.name, centerDate: Date(), location: location, spanMinutes: 360, stepMinutes: 3)
+        selectedTrajectoryAngles = CelestialCalculator.samplePositions(name: body.name, centerDate: Date(), location: location.coordinate, spanMinutes: 360, stepMinutes: 3)
     }
 
     func updateOverlays(from frame: ARFrame, viewportSize: CGSize) {
