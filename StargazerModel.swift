@@ -71,7 +71,7 @@ final class StargazerModel: ObservableObject {
     }
 
     func shouldRenderMarker(for body: CelestialBody) -> Bool {
-        isBodyTypeShown(body) && body.isVisible && bodyOverlays[body.name] != nil
+        isBodyTypeShown(body) && bodyOverlays[body.name] != nil
     }
 
     var showInfoCard: Bool {
@@ -462,7 +462,7 @@ final class StargazerModel: ObservableObject {
 
         var overlays: [String: CGPoint] = [:]
 
-        for body in bodies where isBodyTypeShown(body) && body.isVisible {
+        for body in bodies where isBodyTypeShown(body) {
             guard let projection = project(
                 azimuth: body.azimuth,
                 altitude: body.altitude,

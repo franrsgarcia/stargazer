@@ -14,8 +14,13 @@ struct CelestialBody: Identifiable, Equatable {
     let distanceAu: Double?
     let color: Color
 
-    var isVisible: Bool {
+    var isAboveHorizon: Bool {
         altitude > 0
+    }
+
+    /// Whether the body is above the mathematical horizon (used for labels in search, etc.).
+    var isVisible: Bool {
+        isAboveHorizon
     }
 
     var displayLabel: String {

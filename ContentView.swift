@@ -102,6 +102,7 @@ struct ContentView: View {
         let isSun = body.type == .sun
         let isMoon = body.type == .moon
         let isPlanet = body.type == .planet
+        let belowHorizon = !body.isAboveHorizon
         let size = markerSize(for: body, isSelected: isSelected)
         let tint = body.markerTint
 
@@ -121,6 +122,7 @@ struct ContentView: View {
         }
         .frame(width: 44, height: 44)
         .contentShape(Circle())
+        .opacity(belowHorizon ? 0.55 : 1)
     }
 
     @ViewBuilder
@@ -239,7 +241,7 @@ struct ContentView: View {
                 model.viewportSize = newSize
             }
         }
-        .safeAreaInset(edge: .bottom, spacing: 10) {
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             bottomMenuBar
         }
         .background(Color.black)
@@ -272,9 +274,8 @@ struct ContentView: View {
                 showVisibilitySheet = true
             }
         }
-        .modifier(FloatingGlassBarModifier())
-        .padding(.horizontal, 20)
-        .padding(.bottom, 4)
+        .frame(maxWidth: .infinity)
+        .modifier(BottomGlassBarModifier())
     }
 
     private var barDivider: some View {
@@ -330,19 +331,8 @@ struct ContentView: View {
     }
 
     private func visibilityRow(title: String, isOn: Binding<Bool>) -> some View {
-        Button {
-            isOn.wrappedValue.toggle()
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: isOn.wrappedValue ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 20))
-                    .foregroundStyle(isOn.wrappedValue ? Color.accentColor : Color.secondary)
-                Text(title)
-                    .foregroundStyle(.primary)
-                Spacer()
-            }
-        }
-        .buttonStyle(.plain)
+        Toggle(title, isOn: isOn)
+            .toggleStyle(.switch)
     }
 
     private var searchSheet: some View {
@@ -478,19 +468,23 @@ struct ContentView: View {
 
 // MARK: - Liquid Glass styling (iOS 26 with material fallback)
 
-private struct FloatingGlassBarModifier: ViewModifier {
+private struct BottomGlassBarModifier: ViewModifier {
     func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {
             content
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .glassEffect(.regular.interactive(), in: .capsule)
+                .padding(.top, 8)
+                .padding(.bottom, 4)
+                .glassEffect(.regular.interactive(), in: .rect)
         } else {
             content
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .background(.ultraThinMaterial, in: Capsule())
-                .overlay(Capsule().stroke(Color.white.opacity(0.14), lineWidth: 0.5))
+                .padding(.top, 8)
+                .padding(.bottom, 4)
+                .background(.ultraThinMaterial)
+                .overlay(alignment: .top) {
+                    Rectangle()
+                        .fill(Color.white.opacity(0.12))
+                        .frame(height: 0.5)
+                }
         }
     }
 }
