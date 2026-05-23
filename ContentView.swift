@@ -8,35 +8,7 @@ struct ContentView: View {
             ARViewContainer()
                 .edgesIgnoringSafeArea(.all)
 
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(model.statusText)
-                            .font(.headline)
-                            .foregroundColor(.white)
-                        Text(model.summaryText)
-                            .font(.subheadline)
-                            .foregroundColor(.white.opacity(0.88))
-                    }
-                    Spacer()
-                }
-                .padding(12)
-                .background(.ultraThinMaterial)
-                .cornerRadius(16)
-                .padding([.horizontal, .top], 16)
-
-                Spacer()
-
-                if model.bodies.isEmpty {
-                    Text("Finding the sky... allow location access and point the camera at the sky.")
-                        .font(.subheadline)
-                        .foregroundColor(.white)
-                        .padding(16)
-                        .background(.ultraThinMaterial)
-                        .cornerRadius(16)
-                        .padding(.horizontal, 16)
-                }
-            }
+            // Top status box removed; AR content fills the view.
 
             ForEach(model.bodies) { body in
                 if let point = model.bodyOverlays[body.id], body.isVisible {
@@ -79,6 +51,48 @@ struct ContentView: View {
                         .frame(width: 6, height: 6)
                         .position(p)
                 }
+            }
+
+            // Bottom info card for selected body
+            if let selected = model.bodies.first(where: { $0.id == model.selectedBodyID }) {
+                VStack {
+                    Spacer()
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(alignment: .center) {
+                            Circle()
+                                .fill(selected.color)
+                                .frame(width: 36, height: 36)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(selected.name)
+                                    .font(.headline)
+                                    .foregroundColor(.white)
+                                Text(selected.typeName)
+                                    .font(.subheadline)
+                                    .foregroundColor(.white.opacity(0.9))
+                            }
+                            Spacer()
+                            Button(action: { model.toggleSelection(of: selected) }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.title2)
+                                    .foregroundColor(.white.opacity(0.9))
+                            }
+                        }
+
+                        Text(selected.descriptionText)
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.9))
+
+                        Text(selected.distanceText)
+                            .font(.caption2)
+                            .foregroundColor(.white.opacity(0.95))
+                            .fontWeight(.semibold)
+                    }
+                    .padding()
+                    .background(.ultraThinMaterial)
+                    .cornerRadius(14)
+                    .padding([.horizontal, .bottom], 16)
+                }
+                .animation(.easeInOut, value: model.selectedBodyID)
             }
         }
     }
