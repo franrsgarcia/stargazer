@@ -3,6 +3,20 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject private var model: StargazerModel
 
+    private func horizonLineAngle(for points: [CGPoint]) -> Double {
+        let screenCenterX = UIScreen.main.bounds.midX
+        
+        // Find the two points that straddle the screen center
+        for i in 0..<(points.count - 1) {
+            if points[i].x <= screenCenterX && screenCenterX <= points[i + 1].x {
+                let dx = points[i + 1].x - points[i].x
+                let dy = points[i + 1].y - points[i].y
+                return atan2(dy, dx)
+            }
+        }
+        return 0.0
+    }
+
     private func horizonLabelYPosition(for points: [CGPoint]) -> CGFloat {
         let screenCenterX = UIScreen.main.bounds.midX
         let defaultY = UIScreen.main.bounds.midY
@@ -144,18 +158,19 @@ struct ContentView: View {
                 smoothPath(from: pts)
                     .stroke(Color.white.opacity(0.9), style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
 
-                // Horizon label: centered horizontally, moves vertically with the horizon line
+                // Horizon label: centered horizontally, moves vertically with the horizon line, rotates with it
                 let screenCenterX = UIScreen.main.bounds.midX
                 let labelY = horizonLabelYPosition(for: pts)
+                let angle = horizonLineAngle(for: pts)
                 
                 Text("HORIZON")
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundColor(Color.black.opacity(0.9))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(Color.white.opacity(0.9))
-                    .cornerRadius(6)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+                    .background(Color.white.opacity(0.12))
+                    .cornerRadius(4)
+                    .rotationEffect(.radians(angle))
                     .position(x: screenCenterX, y: labelY)
             }
 
@@ -180,30 +195,29 @@ struct ContentView: View {
             if let selected = model.bodies.first(where: { $0.id == model.selectedBodyID }) {
                 VStack {
                     Spacer()
-                    VStack(spacing: 16) {
+                    VStack(spacing: 10) {
                         Capsule()
                             .fill(Color.white.opacity(0.3))
-                            .frame(width: 40, height: 5)
-                            .padding(.top, 8)
+                            .frame(width: 32, height: 4)
+                            .padding(.top, 6)
 
-                        HStack(alignment: .top, spacing: 16) {
+                        HStack(alignment: .top, spacing: 12) {
                             Circle()
                                 .fill(selected.color)
-                                .frame(width: 52, height: 52)
+                                .frame(width: 40, height: 40)
                                 .overlay(
                                     Text(String(selected.name.prefix(1)))
-                                        .font(.title2)
+                                        .font(.headline)
                                         .fontWeight(.bold)
                                         .foregroundColor(.white)
                                 )
 
-                            VStack(alignment: .leading, spacing: 6) {
+                            VStack(alignment: .leading, spacing: 3) {
                                 Text(selected.name)
-                                    .font(.title2)
-                                    .fontWeight(.semibold)
+                                    .font(.system(size: 16, weight: .semibold))
                                     .foregroundColor(.white)
                                 Text(selected.descriptionText)
-                                    .font(.subheadline)
+                                    .font(.system(size: 12))
                                     .foregroundColor(.white.opacity(0.8))
                                     .lineLimit(2)
                             }
@@ -212,25 +226,25 @@ struct ContentView: View {
 
                             Button(action: { model.toggleSelection(of: selected) }) {
                                 Image(systemName: "xmark")
-                                    .font(.title3)
+                                    .font(.body)
                                     .foregroundColor(.white.opacity(0.8))
-                                    .padding(10)
+                                    .padding(8)
                                     .background(Color.white.opacity(0.12))
                                     .clipShape(Circle())
                             }
                         }
 
-                        HStack(spacing: 12) {
+                        HStack(spacing: 10) {
                             infoTile(iconName: "arrow.up.right.circle", title: "Distance", value: selected.distanceText)
                             infoTile(iconName: "star.fill", title: "Magnitude", value: selected.magnitudeText)
                             infoTile(iconName: "eye", title: "Visible", value: selected.visibleUntilText)
                         }
-                        .padding(.horizontal, 4)
+                        .padding(.horizontal, 2)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 24)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 16)
                     .background(Color.black.opacity(0.55))
-                    .cornerRadius(24)
+                    .cornerRadius(20)
                     .padding(.horizontal, 16)
                     .padding(.bottom, 12)
                 }
@@ -240,22 +254,22 @@ struct ContentView: View {
     }
 
     private func infoTile(iconName: String, title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
                 Image(systemName: iconName)
-                    .font(.body)
+                    .font(.system(size: 13))
                     .foregroundColor(.white.opacity(0.85))
                 Text(title.uppercased())
-                    .font(.caption2)
+                    .font(.system(size: 10, weight: .semibold))
                     .foregroundColor(.white.opacity(0.75))
             }
             Text(value)
-                .font(.subheadline)
-                .fontWeight(.semibold)
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundColor(.white)
+                .lineLimit(1)
         }
-        .padding(12)
+        .padding(10)
         .background(Color.white.opacity(0.08))
-        .cornerRadius(16)
+        .cornerRadius(12)
     }
 }
