@@ -309,7 +309,6 @@
       isa = PBXResourcesBuildPhase;
       buildActionMask = 2147483647;
       files = (
-        000000000000000000000025 /* Info.plist in Resources */,
       );
       runOnlyForDeploymentPostprocessing = 0;
     };
@@ -343,10 +342,6 @@
     000000000000000000000024 /* CelestialCalculator.swift in Sources */ = {
       isa = PBXBuildFile;
       fileRef = 000000000000000000000017 /* CelestialCalculator.swift */;
-    };
-    000000000000000000000025 /* Info.plist in Resources */ = {
-      isa = PBXBuildFile;
-      fileRef = 000000000000000000000018 /* Info.plist */;
     };
     000000000000000000000026 /* StargazerModel.swift in Sources */ = {
       isa = PBXBuildFile;
