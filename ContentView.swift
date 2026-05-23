@@ -3,6 +3,35 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject private var model: StargazerModel
 
+    // Produce a smooth path from a series of points using quadratic segments
+    private func smoothPath(from pts: [CGPoint]) -> Path {
+        var path = Path()
+        guard pts.count > 0 else { return path }
+        if pts.count == 1 {
+            path.move(to: pts[0])
+            return path
+        }
+        if pts.count == 2 {
+            path.move(to: pts[0])
+            path.addLine(to: pts[1])
+            return path
+        }
+
+        path.move(to: pts[0])
+        for i in 0..<(pts.count - 1) {
+            let p0 = pts[i]
+            let p1 = pts[i + 1]
+            let mid = CGPoint(x: (p0.x + p1.x) / 2.0, y: (p0.y + p1.y) / 2.0)
+            path.addQuadCurve(to: mid, control: p0)
+        }
+        // finish to last point
+        if let last = pts.last, pts.count >= 2 {
+            let penultimate = pts[pts.count - 2]
+            path.addQuadCurve(to: last, control: penultimate)
+        }
+        return path
+    }
+
     var body: some View {
         ZStack {
             ARViewContainer()
@@ -54,14 +83,41 @@ struct ContentView: View {
             }
 
             // Draw horizon reference line
-            if model.horizonPoints.count > 1 {
-                Path { path in
-                    let pts = model.horizonPoints
-                    path.move(to: pts[0])
-                    for p in pts.dropFirst() { path.addLine(to: p) }
+            if model.showHorizon, model.horizonPoints.count > 1 {
+                let pts = model.horizonPoints
+                smoothPath(from: pts)
+                    .stroke(Color.white.opacity(0.9), style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
+                    .shadow(color: Color.black.opacity(0.6), radius: 2, x: 0, y: 1)
+
+                // Horizon label placed at midpoint of the horizon samples
+                let midIndex = pts.count / 2
+                if midIndex < pts.count {
+                    let labelPoint = pts[midIndex]
+                    Text("Horizon")
+                        .font(.caption)
+                        .foregroundColor(.white)
+                        .padding(6)
+                        .background(.ultraThinMaterial)
+                        .cornerRadius(8)
+                        .position(x: labelPoint.x, y: labelPoint.y - 14)
                 }
-                .stroke(Color.white.opacity(0.9), style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
-                .shadow(color: Color.black.opacity(0.6), radius: 2, x: 0, y: 1)
+            }
+
+            // Horizon toggle button (top-right)
+            VStack {
+                HStack {
+                    Spacer()
+                    Button(action: { model.showHorizon.toggle() }) {
+                        Image(systemName: model.showHorizon ? "eye" : "eye.slash")
+                            .foregroundColor(.white)
+                            .padding(10)
+                            .background(.ultraThinMaterial)
+                            .cornerRadius(10)
+                    }
+                    .padding(.trailing, 16)
+                    .padding(.top, 14)
+                }
+                Spacer()
             }
 
             // Bottom info card for selected body

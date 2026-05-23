@@ -8,6 +8,7 @@ final class StargazerModel: ObservableObject {
     @Published var bodyOverlays: [UUID: CGPoint] = [:]
     @Published var trajectoryPoints: [CGPoint] = []
     @Published var horizonPoints: [CGPoint] = []
+    @Published var showHorizon: Bool = true
     @Published var statusText = "Stargazer"
     @Published var summaryText = "Point your device at the sky to see planets and the moon."
 
