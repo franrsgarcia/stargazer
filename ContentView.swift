@@ -53,6 +53,17 @@ struct ContentView: View {
                 }
             }
 
+            // Draw horizon reference line
+            if model.horizonPoints.count > 1 {
+                Path { path in
+                    let pts = model.horizonPoints
+                    path.move(to: pts[0])
+                    for p in pts.dropFirst() { path.addLine(to: p) }
+                }
+                .stroke(Color.white.opacity(0.9), style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
+                .shadow(color: Color.black.opacity(0.6), radius: 2, x: 0, y: 1)
+            }
+
             // Bottom info card for selected body
             if let selected = model.bodies.first(where: { $0.id == model.selectedBodyID }) {
                 VStack {

@@ -7,6 +7,7 @@ final class StargazerModel: ObservableObject {
     @Published var bodies: [CelestialBody] = []
     @Published var bodyOverlays: [UUID: CGPoint] = [:]
     @Published var trajectoryPoints: [CGPoint] = []
+    @Published var horizonPoints: [CGPoint] = []
     @Published var statusText = "Stargazer"
     @Published var summaryText = "Point your device at the sky to see planets and the moon."
 
@@ -89,9 +90,24 @@ final class StargazerModel: ObservableObject {
             }
         }
 
+        // Compute horizon (altitude = 0) samples across azimuths
+        var horizonPts: [CGPoint] = []
+        for az in stride(from: 0.0, to: 360.0, by: 5.0) {
+            let dir = CelestialCalculator.directionVector(azimuth: az, altitude: 0.0)
+            let cameraPoint = viewMatrix * SIMD4<Float>(dir, 0)
+            guard cameraPoint.z < 0 else { continue }
+            let clip = projectionMatrix * SIMD4<Float>(cameraPoint.x, cameraPoint.y, cameraPoint.z, 1)
+            guard clip.w != 0 else { continue }
+            let ndc = clip / clip.w
+            let x = CGFloat((ndc.x + 1) / 2) * viewportSize.width
+            let y = CGFloat((1 - ndc.y) / 2) * viewportSize.height
+            horizonPts.append(CGPoint(x: x, y: y))
+        }
+
         DispatchQueue.main.async {
             self.bodyOverlays = overlays
             self.trajectoryPoints = trajPoints
+            self.horizonPoints = horizonPts
         }
     }
 }
