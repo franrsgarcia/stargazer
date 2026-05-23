@@ -3,6 +3,12 @@ import SwiftUI
 import ARKit
 import CoreLocation
 
+enum SelectionSource {
+    case none
+    case tap
+    case search
+}
+
 final class StargazerModel: ObservableObject {
     @Published var bodies: [CelestialBody] = []
     @Published var bodyOverlays: [UUID: CGPoint] = [:]
@@ -10,13 +16,23 @@ final class StargazerModel: ObservableObject {
     @Published var futureTrajectoryPoints: [CGPoint] = []
     @Published var horizonPoints: [CGPoint] = []
     @Published var showHorizon: Bool = true
+    @Published var showCameraFeed: Bool = true
+    @Published var showSun: Bool = true
+    @Published var showMoon: Bool = true
+    @Published var showPlanets: Bool = true
+    @Published var showStars: Bool = true
     @Published var statusText = "Stargazer"
     @Published var summaryText = "Point your device at the sky to see planets and the moon."
 
     @Published private(set) var selectedBodyID: UUID?
     @Published private(set) var selectedBodyName: String?
+    @Published private(set) var selectionSource: SelectionSource = .none
     @Published var selectedRiseText: String?
     @Published var selectedSetText: String?
+    @Published var searchArrowOpacity: Double = 0
+    @Published var searchInfoOpacity: Double = 0
+    @Published var viewportSize: CGSize = UIScreen.main.bounds.size
+
     private var selectedTrajectorySamples: [(date: Date, az: Double, alt: Double, isFuture: Bool)] = []
 
     private let locationManager = LocationManager()
@@ -24,8 +40,31 @@ final class StargazerModel: ObservableObject {
     private var currentHeading: CLHeading?
     private var updateTimer: Timer?
 
+    static let searchableNames = ["Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn"]
+
     init() {
         locationManager.delegate = self
+    }
+
+    func isBodyTypeShown(_ body: CelestialBody) -> Bool {
+        switch body.type {
+        case .sun: return showSun
+        case .moon: return showMoon
+        case .planet: return showPlanets
+        }
+    }
+
+    func shouldRenderMarker(for body: CelestialBody) -> Bool {
+        isBodyTypeShown(body) && body.isVisible
+    }
+
+    var showInfoCard: Bool {
+        guard selectedBodyName != nil else { return false }
+        switch selectionSource {
+        case .none: return false
+        case .tap: return true
+        case .search: return searchInfoOpacity > 0.35
+        }
     }
 
     func startTracking() {
@@ -76,21 +115,42 @@ final class StargazerModel: ObservableObject {
     }
 
     func toggleSelection(of body: CelestialBody) {
-        if selectedBodyID == body.id {
-            selectedBodyID = nil
-            selectedBodyName = nil
-            selectedRiseText = nil
-            selectedSetText = nil
-            selectedTrajectorySamples = []
-            DispatchQueue.main.async {
-                self.pastTrajectoryPoints = []
-                self.futureTrajectoryPoints = []
-            }
+        if selectedBodyID == body.id && selectionSource == .tap {
+            clearSelection()
             return
         }
+        selectionSource = .tap
+        searchArrowOpacity = 0
+        searchInfoOpacity = 1
+        selectBody(named: body.name, matchingID: body.id)
+    }
 
-        selectedBodyID = body.id
-        selectedBodyName = body.name
+    func selectFromSearch(named name: String) {
+        selectionSource = .search
+        searchArrowOpacity = 1
+        searchInfoOpacity = 0
+        let matching = bodies.first(where: { $0.name == name })
+        selectBody(named: name, matchingID: matching?.id)
+    }
+
+    func clearSelection() {
+        selectedBodyID = nil
+        selectedBodyName = nil
+        selectionSource = .none
+        selectedRiseText = nil
+        selectedSetText = nil
+        selectedTrajectorySamples = []
+        searchArrowOpacity = 0
+        searchInfoOpacity = 0
+        DispatchQueue.main.async {
+            self.pastTrajectoryPoints = []
+            self.futureTrajectoryPoints = []
+        }
+    }
+
+    private func selectBody(named name: String, matchingID: UUID?) {
+        selectedBodyID = matchingID
+        selectedBodyName = name
         guard let location = currentLocation else { return }
         selectedTrajectorySamples = []
         selectedRiseText = nil
@@ -100,8 +160,8 @@ final class StargazerModel: ObservableObject {
         let date = Date()
 
         DispatchQueue.global(qos: .userInitiated).async {
-            let trajectory = CelestialCalculator.sampleTrajectory(name: body.name, centerDate: date, location: coordinate, spanMinutes: 360, stepMinutes: 5)
-            let riseSetSamples = CelestialCalculator.sampleTrajectory(name: body.name, centerDate: date, location: coordinate, spanMinutes: 1440, stepMinutes: 15)
+            let trajectory = CelestialCalculator.sampleTrajectory(name: name, centerDate: date, location: coordinate, spanMinutes: 360, stepMinutes: 5)
+            let riseSetSamples = CelestialCalculator.sampleTrajectory(name: name, centerDate: date, location: coordinate, spanMinutes: 1440, stepMinutes: 15)
             let riseSet = self.deriveRiseSetStrings(from: riseSetSamples)
 
             DispatchQueue.main.async {
@@ -112,29 +172,25 @@ final class StargazerModel: ObservableObject {
         }
     }
 
-    private func computeRiseSetTimes(name: String, location: CLLocationCoordinate2D, centerDate: Date) {
-        let samples = CelestialCalculator.sampleTrajectory(name: name, centerDate: centerDate, location: location, spanMinutes: 1440, stepMinutes: 15)
-        var nextRise: Date?
-        var nextSet: Date?
+    func updateSearchGuidance(for bodyName: String?) {
+        guard selectionSource == .search, let bodyName = bodyName else { return }
+        guard viewportSize.width > 0, viewportSize.height > 0 else { return }
 
-        for i in 1..<samples.count {
-            let previous = samples[i - 1]
-            let current = samples[i]
-
-            if nextRise == nil, previous.alt <= 0, current.alt > 0 {
-                nextRise = current.date
-            }
-            if nextSet == nil, previous.alt > 0, current.alt <= 0 {
-                nextSet = current.date
-            }
-
-            if nextRise != nil, nextSet != nil {
-                break
-            }
+        guard let body = bodies.first(where: { $0.name == bodyName }),
+              let point = bodyOverlays[body.id] else {
+            searchArrowOpacity = 1
+            searchInfoOpacity = 0
+            return
         }
 
-        selectedRiseText = nextRise.map { DateFormatter.localizedString(from: $0, dateStyle: .short, timeStyle: .short) } ?? "Unknown"
-        selectedSetText = nextSet.map { DateFormatter.localizedString(from: $0, dateStyle: .short, timeStyle: .short) } ?? "Unknown"
+        let centerX = viewportSize.width / 2
+        let centerY = viewportSize.height / 2
+        let distance = hypot(point.x - centerX, point.y - centerY)
+        let threshold = min(viewportSize.width, viewportSize.height) * 0.14
+        let blend = max(0, min(1, (distance - threshold * 0.5) / (threshold * 0.9)))
+
+        searchArrowOpacity = blend
+        searchInfoOpacity = 1 - blend
     }
 
     private func deriveRiseSetStrings(from samples: [(date: Date, az: Double, alt: Double, isFuture: Bool)]) -> (rise: String, set: String) {
@@ -182,7 +238,7 @@ final class StargazerModel: ObservableObject {
 
         var pastPoints: [CGPoint] = []
         var futurePoints: [CGPoint] = []
-        if let _ = selectedBodyID, !selectedTrajectorySamples.isEmpty {
+        if selectedBodyName != nil, !selectedTrajectorySamples.isEmpty {
             for sample in selectedTrajectorySamples {
                 let dir = CelestialCalculator.directionVector(azimuth: sample.az, altitude: sample.alt)
                 let cameraPoint = viewMatrix * SIMD4<Float>(dir, 0)
@@ -201,7 +257,6 @@ final class StargazerModel: ObservableObject {
             }
         }
 
-        // Compute horizon (altitude = 0) samples across azimuths
         var horizonPts: [CGPoint] = []
         for az in stride(from: 0.0, to: 360.0, by: 5.0) {
             let dir = CelestialCalculator.directionVector(azimuth: az, altitude: 0.0)
@@ -220,6 +275,7 @@ final class StargazerModel: ObservableObject {
             self.pastTrajectoryPoints = pastPoints
             self.futureTrajectoryPoints = futurePoints
             self.horizonPoints = horizonPts
+            self.updateSearchGuidance(for: self.selectedBodyName)
         }
     }
 }

@@ -29,7 +29,11 @@ struct ARViewContainer: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: ARView, context: Context) {
-        // Nothing to update from SwiftUI state directly.
+        if model.showCameraFeed {
+            uiView.environment.background = .cameraFeed()
+        } else {
+            uiView.environment.background = .color(.black)
+        }
     }
 
     static func dismantleUIView(_ uiView: ARView, coordinator: Coordinator) {
