@@ -13,28 +13,20 @@ struct ContentView: View {
 
             skyOverlay
                 .ignoresSafeArea()
-
-            overlayUI
+        }
+        .overlay(alignment: .top) {
+            locationHeader
+                .padding(.horizontal, 16)
+                .padding(.top, 6)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            bottomChrome
         }
         .sheet(isPresented: $showSearchSheet) {
             searchSheet
         }
         .sheet(isPresented: $showVisibilitySheet) {
             visibilitySheet
-        }
-    }
-
-    /// Chrome floating over the fullscreen feed — separate from the AR layer.
-    private var overlayUI: some View {
-        VStack(spacing: 0) {
-            locationHeader
-                .padding(.horizontal, 16)
-                .padding(.top, 6)
-
-            Spacer(minLength: 0)
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            bottomChrome
         }
     }
 
