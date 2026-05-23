@@ -81,25 +81,24 @@ struct ContentView: View {
     @ViewBuilder
     private var horizonOverlay: some View {
         let pts = model.horizonPoints
-        let screenCenterX = model.viewportSize.width / 2
-        let labelY = horizonLabelYPosition(for: pts)
-        let angle = horizonLineAngle(for: pts)
 
         smoothPath(from: pts)
             .stroke(Color.white.opacity(0.9), style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
             .allowsHitTesting(false)
 
-        Text("HORIZON")
-            .font(.system(size: 8, weight: .semibold))
-            .foregroundColor(Color(white: 0.78))
-            .fixedSize(horizontal: true, vertical: true)
-            .padding(.horizontal, 3)
-            .padding(.vertical, 2)
-            .background(Color.white)
-            .cornerRadius(3)
-            .rotationEffect(.radians(angle))
-            .position(x: screenCenterX, y: labelY)
-            .allowsHitTesting(false)
+        if pts.count > 1 {
+            Text("HORIZON")
+                .font(.system(size: 8, weight: .semibold))
+                .foregroundColor(Color(white: 0.78))
+                .fixedSize(horizontal: true, vertical: true)
+                .padding(.horizontal, 3)
+                .padding(.vertical, 2)
+                .background(Color.white)
+                .cornerRadius(3)
+                .rotationEffect(.radians(model.horizonLabelAngle))
+                .position(model.horizonLabelAnchor)
+                .allowsHitTesting(false)
+        }
 
         ForEach(model.cardinalMarkers) { marker in
             cardinalLabel(marker)
@@ -139,10 +138,17 @@ struct ContentView: View {
 
             barDivider
 
+            bottomBarItem(title: "Compass", systemImage: "location.north.line.fill") {
+                model.resetCompassAlignment()
+            }
+
+            barDivider
+
             bottomBarItem(title: "Hide/Show", systemImage: "eye") {
                 showVisibilitySheet = true
             }
         }
+        .frame(maxWidth: .infinity)
         .modifier(FloatingMenuBarModifier())
     }
 
@@ -155,9 +161,10 @@ struct ContentView: View {
     private func bottomBarItem(title: String, systemImage: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             bottomBarLabel(title: title, systemImage: systemImage)
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .frame(maxWidth: .infinity)
     }
 
     private func bottomBarLabel(title: String, systemImage: String) -> some View {
@@ -169,7 +176,7 @@ struct ContentView: View {
         }
         .foregroundColor(.white)
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 6)
+        .padding(.vertical, 8)
     }
 
     // MARK: - Sheets
@@ -333,41 +340,6 @@ struct ContentView: View {
     }
 
     // MARK: - Sky rendering helpers
-
-    private func horizonLineAngle(for points: [CGPoint]) -> Double {
-        let screenCenterX = model.viewportSize.width / 2
-
-        for i in 0..<(points.count - 1) {
-            if points[i].x <= screenCenterX && screenCenterX <= points[i + 1].x {
-                let dx = points[i + 1].x - points[i].x
-                let dy = points[i + 1].y - points[i].y
-                return atan2(dy, dx)
-            }
-        }
-        return 0.0
-    }
-
-    private func horizonLabelYPosition(for points: [CGPoint]) -> CGFloat {
-        let screenCenterX = model.viewportSize.width / 2
-        let defaultY = model.viewportSize.height / 2
-
-        guard let minX = points.map(\.x).min(), let maxX = points.map(\.x).max() else {
-            return defaultY
-        }
-
-        guard screenCenterX >= minX && screenCenterX <= maxX else {
-            return defaultY
-        }
-
-        for i in 0..<(points.count - 1) {
-            if points[i].x <= screenCenterX && screenCenterX <= points[i + 1].x {
-                let t = (screenCenterX - points[i].x) / (points[i + 1].x - points[i].x)
-                return points[i].y + t * (points[i + 1].y - points[i].y)
-            }
-        }
-
-        return defaultY
-    }
 
     private func segmentOpacity(index: Int, totalCount: Int, baseOpacity: Double = 1.0) -> Double {
         let progress = Double(index) / Double(totalCount)

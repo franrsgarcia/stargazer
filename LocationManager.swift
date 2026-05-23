@@ -13,15 +13,25 @@ final class LocationManager: NSObject {
         super.init()
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyBest
-        manager.headingFilter = 5
+        manager.headingFilter = 1
         manager.requestWhenInUseAuthorization()
     }
 
     func start() {
         if CLLocationManager.locationServicesEnabled() {
             manager.startUpdatingLocation()
-            manager.startUpdatingHeading()
+            if CLLocationManager.headingAvailable() {
+                manager.headingOrientation = .portrait
+                manager.startUpdatingHeading()
+            }
         }
+    }
+
+    func resetHeading() {
+        guard CLLocationManager.headingAvailable() else { return }
+        manager.stopUpdatingHeading()
+        manager.headingOrientation = .portrait
+        manager.startUpdatingHeading()
     }
 }
 

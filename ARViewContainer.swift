@@ -93,11 +93,16 @@ struct ARViewContainer: UIViewRepresentable {
 
         container.arView.session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
         context.coordinator.install(on: container)
+        context.coordinator.lastCompassResetToken = model.compassResetToken
         return container
     }
 
     func updateUIView(_ uiView: FullscreenARContainerView, context: Context) {
         uiView.setShowsCameraFeed(model.showCameraFeed)
+        if context.coordinator.lastCompassResetToken != model.compassResetToken {
+            context.coordinator.lastCompassResetToken = model.compassResetToken
+            context.coordinator.resetARSession(on: uiView)
+        }
         uiView.setNeedsLayout()
     }
 
@@ -110,6 +115,7 @@ struct ARViewContainer: UIViewRepresentable {
         private let model: StargazerModel
         private var subscription: Cancellable?
         private weak var container: FullscreenARContainerView?
+        private var lastCompassResetToken: UUID?
 
         init(model: StargazerModel) {
             self.model = model
@@ -135,6 +141,16 @@ struct ARViewContainer: UIViewRepresentable {
         func stopObserving() {
             subscription?.cancel()
             subscription = nil
+        }
+
+        func resetARSession(on container: FullscreenARContainerView) {
+            guard ARWorldTrackingConfiguration.isSupported else { return }
+
+            let configuration = ARWorldTrackingConfiguration()
+            configuration.worldAlignment = .gravityAndHeading
+            configuration.environmentTexturing = .none
+            configuration.planeDetection = []
+            container.arView.session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
         }
 
         func session(_ session: ARSession, didFailWithError error: Error) {

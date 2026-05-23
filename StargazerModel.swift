@@ -55,12 +55,17 @@ final class StargazerModel: ObservableObject {
     @Published var viewportSize: CGSize = UIScreen.main.bounds.size
     @Published var locationLabel = "Locating..."
     @Published var cardinalMarkers: [CardinalMarker] = []
+    @Published var horizonLabelAnchor: CGPoint = .zero
+    @Published var horizonLabelAngle: Double = 0
+    @Published private(set) var compassResetToken = UUID()
 
     private var selectedTrajectorySamples: [(date: Date, az: Double, alt: Double, isFuture: Bool)] = []
     private let geocoder = CLGeocoder()
     private var lastGeocodedCoordinate: CLLocationCoordinate2D?
     private var smoothedOverlays: [String: CGPoint] = [:]
+    private var smoothedHorizonLabelY: CGFloat?
     private var searchGuidanceComplete = false
+    private var lastYawCorrection: Float = 0
 
     private let locationManager = LocationManager()
     private var currentLocation: CLLocation?
@@ -132,6 +137,14 @@ final class StargazerModel: ObservableObject {
             }
         }
         refreshCelestialData()
+    }
+
+    /// Re-sync sky alignment to the device compass (no manual calibration targets).
+    func resetCompassAlignment() {
+        locationManager.resetHeading()
+        compassResetToken = UUID()
+        smoothedHorizonLabelY = nil
+        statusText = "Compass realigned"
     }
 
     func refreshCelestialData() {
@@ -284,15 +297,47 @@ final class StargazerModel: ObservableObject {
         bodyOverlays[name]
     }
 
+    private func compassHeadingDegrees(from heading: CLHeading) -> Double? {
+        if heading.trueHeading >= 0 {
+            return heading.trueHeading
+        }
+        if heading.magneticHeading >= 0 {
+            return heading.magneticHeading
+        }
+        return nil
+    }
+
+    /// Align astronomical azimuth with Core Location compass heading instead of drifting ARKit north.
+    private func compassYawCorrection(for frame: ARFrame) -> Float {
+        guard let heading = currentHeading,
+              let compassDegrees = compassHeadingDegrees(from: heading) else {
+            return 0
+        }
+
+        let compassRadians = Float(compassDegrees * .pi / 180)
+        let arkitYaw = frame.camera.eulerAngles.y
+        return compassRadians - arkitYaw
+    }
+
+    private func rotateAroundY(_ vector: SIMD3<Float>, by angle: Float) -> SIMD3<Float> {
+        guard abs(angle) > 0.0001 else { return vector }
+        let q = simd_quatf(angle: angle, axis: SIMD3<Float>(0, 1, 0))
+        return simd_act(q, vector)
+    }
+
     private func project(
         azimuth: Double,
         altitude: Double,
         viewMatrix: simd_float4x4,
         projectionMatrix: simd_float4x4,
         viewportSize: CGSize,
-        screenOffset: CGPoint = .zero
+        screenOffset: CGPoint = .zero,
+        yawCorrection: Float = 0
     ) -> (point: CGPoint, cameraZ: Float)? {
-        let direction = CelestialCalculator.directionVector(azimuth: azimuth, altitude: altitude)
+        var direction = CelestialCalculator.directionVector(azimuth: azimuth, altitude: altitude)
+        if abs(yawCorrection) > 0.0001 {
+            direction = rotateAroundY(direction, by: yawCorrection)
+        }
         let cameraPoint = viewMatrix * SIMD4<Float>(direction, 0)
         let cameraZ = cameraPoint.z
 
@@ -386,7 +431,8 @@ final class StargazerModel: ObservableObject {
             altitude: body.altitude,
             viewMatrix: lastViewMatrix,
             projectionMatrix: lastProjectionMatrix,
-            viewportSize: size
+            viewportSize: size,
+            yawCorrection: lastYawCorrection
         )?.point
 
         guard let target else {
@@ -443,6 +489,7 @@ final class StargazerModel: ObservableObject {
         projectionViewport: CGSize,
         visibleViewport: CGSize,
         screenOffset: CGPoint,
+        yawCorrection: Float,
         maxJump: CGFloat
     ) -> [[CGPoint]] {
         var segments: [[CGPoint]] = []
@@ -463,7 +510,8 @@ final class StargazerModel: ObservableObject {
                 viewMatrix: viewMatrix,
                 projectionMatrix: projectionMatrix,
                 viewportSize: projectionViewport,
-                screenOffset: screenOffset
+                screenOffset: screenOffset,
+                yawCorrection: yawCorrection
             ), projection.cameraZ < inFrontThreshold else {
                 flush()
                 continue
@@ -510,6 +558,104 @@ final class StargazerModel: ObservableObject {
         return nil
     }
 
+    private func closestPointOnSegment(_ a: CGPoint, _ b: CGPoint, to point: CGPoint) -> CGPoint {
+        let dx = b.x - a.x
+        let dy = b.y - a.y
+        let lengthSquared = dx * dx + dy * dy
+        guard lengthSquared > 0.0001 else { return a }
+
+        let t = max(0, min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / lengthSquared))
+        return CGPoint(x: a.x + t * dx, y: a.y + t * dy)
+    }
+
+    private func horizonSampleAt(x: CGFloat, in points: [CGPoint]) -> (y: CGFloat, angle: Double)? {
+        guard points.count > 1 else { return nil }
+
+        var bestDirect: (y: CGFloat, angle: Double, score: CGFloat)?
+
+        for index in 0..<(points.count - 1) {
+            let p0 = points[index]
+            let p1 = points[index + 1]
+            let dx = p1.x - p0.x
+            let dy = p1.y - p0.y
+
+            if abs(dx) < 0.001 {
+                let distance = abs(x - p0.x)
+                if distance < 8 {
+                    let candidate = (y: (p0.y + p1.y) / 2, angle: atan2(dy, max(dx, 0.001)), score: distance)
+                    if bestDirect == nil || candidate.score < bestDirect!.score {
+                        bestDirect = candidate
+                    }
+                }
+                continue
+            }
+
+            let minX = min(p0.x, p1.x)
+            let maxX = max(p0.x, p1.x)
+            guard x >= minX - 1 && x <= maxX + 1 else { continue }
+
+            let t = (x - p0.x) / dx
+            guard t >= -0.05, t <= 1.05 else { continue }
+
+            let clampedT = max(0, min(1, t))
+            let y = p0.y + clampedT * dy
+            let score = abs(t - clampedT)
+            if bestDirect == nil || score < bestDirect!.score {
+                bestDirect = (y, atan2(dy, dx), score)
+            }
+        }
+
+        if let bestDirect {
+            return (bestDirect.y, bestDirect.angle)
+        }
+
+        let target = CGPoint(x: x, y: points.map(\.y).reduce(0, +) / CGFloat(points.count))
+        var nearest = points[0]
+        var nearestDistance = CGFloat.greatestFiniteMagnitude
+        var nearestAngle = 0.0
+
+        for index in 0..<(points.count - 1) {
+            let p0 = points[index]
+            let p1 = points[index + 1]
+            let closest = closestPointOnSegment(p0, p1, to: target)
+            let distance = hypot(closest.x - target.x, closest.y - target.y)
+            if distance < nearestDistance {
+                nearestDistance = distance
+                nearest = closest
+                nearestAngle = atan2(p1.y - p0.y, p1.x - p0.x)
+            }
+        }
+
+        return (nearest.y, nearestAngle)
+    }
+
+    private func smoothAngle(from previous: Double, to target: Double, factor: Double) -> Double {
+        var delta = target - previous
+        while delta > .pi { delta -= 2 * .pi }
+        while delta < -.pi { delta += 2 * .pi }
+        return previous + delta * factor
+    }
+
+    private func updateHorizonLabel(using points: [CGPoint], viewportSize: CGSize) {
+        guard points.count > 1, viewportSize.width > 0 else { return }
+
+        let centerX = viewportSize.width / 2
+        guard let sample = horizonSampleAt(x: centerX, in: points) else { return }
+
+        let smoothing: CGFloat = 0.28
+        let targetY = sample.y
+        let smoothedY: CGFloat
+        if let previous = smoothedHorizonLabelY {
+            smoothedY = previous + (targetY - previous) * smoothing
+        } else {
+            smoothedY = targetY
+        }
+
+        smoothedHorizonLabelY = smoothedY
+        horizonLabelAnchor = CGPoint(x: centerX, y: smoothedY)
+        horizonLabelAngle = smoothAngle(from: horizonLabelAngle, to: sample.angle, factor: Double(smoothing))
+    }
+
     private func horizonTangentAngle(at x: CGFloat, in horizonPts: [CGPoint]) -> Double {
         guard horizonPts.count >= 2 else { return 0 }
         let y = horizonY(at: x, in: horizonPts) ?? horizonPts[0].y
@@ -535,8 +681,10 @@ final class StargazerModel: ObservableObject {
         let projectionOffset = CGPoint(x: arViewFrame?.origin.x ?? 0, y: arViewFrame?.origin.y ?? 0)
         let viewMatrix = frame.camera.viewMatrix(for: .portrait)
         let projectionMatrix = frame.camera.projectionMatrix(for: .portrait, viewportSize: projectionViewport, zNear: 0.01, zFar: 1000)
+        let yawCorrection = compassYawCorrection(for: frame)
         lastViewMatrix = viewMatrix
         lastProjectionMatrix = projectionMatrix
+        lastYawCorrection = yawCorrection
 
         var overlays: [String: CGPoint] = [:]
 
@@ -547,7 +695,8 @@ final class StargazerModel: ObservableObject {
                 viewMatrix: viewMatrix,
                 projectionMatrix: projectionMatrix,
                 viewportSize: projectionViewport,
-                screenOffset: projectionOffset
+                screenOffset: projectionOffset,
+                yawCorrection: yawCorrection
             ), isInFront(cameraZ: projection.cameraZ, altitude: body.altitude) else {
                 continue
             }
@@ -572,6 +721,7 @@ final class StargazerModel: ObservableObject {
                 projectionViewport: projectionViewport,
                 visibleViewport: viewportSize,
                 screenOffset: projectionOffset,
+                yawCorrection: yawCorrection,
                 maxJump: maxJump
             )
             futureSegments = buildTrajectorySegments(
@@ -581,6 +731,7 @@ final class StargazerModel: ObservableObject {
                 projectionViewport: projectionViewport,
                 visibleViewport: viewportSize,
                 screenOffset: projectionOffset,
+                yawCorrection: yawCorrection,
                 maxJump: maxJump
             )
         }
@@ -593,10 +744,13 @@ final class StargazerModel: ObservableObject {
                 viewMatrix: viewMatrix,
                 projectionMatrix: projectionMatrix,
                 viewportSize: projectionViewport,
-                screenOffset: projectionOffset
+                screenOffset: projectionOffset,
+                yawCorrection: yawCorrection
             ), projection.cameraZ < 0.05 else { continue }
             horizonPts.append(projection.point)
         }
+
+        updateHorizonLabel(using: horizonPts, viewportSize: viewportSize)
 
         var cardinals: [CardinalMarker] = []
         if showHorizon {
@@ -607,7 +761,8 @@ final class StargazerModel: ObservableObject {
                     viewMatrix: viewMatrix,
                     projectionMatrix: projectionMatrix,
                     viewportSize: projectionViewport,
-                    screenOffset: projectionOffset
+                    screenOffset: projectionOffset,
+                    yawCorrection: yawCorrection
                 ), projection.cameraZ < 0.05 else { continue }
 
                 let x = projection.point.x
@@ -636,7 +791,8 @@ final class StargazerModel: ObservableObject {
                     viewMatrix: viewMatrix,
                     projectionMatrix: projectionMatrix,
                     viewportSize: projectionViewport,
-                    screenOffset: projectionOffset
+                    screenOffset: projectionOffset,
+                    yawCorrection: yawCorrection
                 )?.point
             }
         }
@@ -647,12 +803,25 @@ final class StargazerModel: ObservableObject {
 extension StargazerModel: LocationManagerDelegate {
     nonisolated func locationManager(didUpdate location: CLLocation?, heading: CLHeading?) {
         Task { @MainActor in
-            currentLocation = location
-            currentHeading = heading
-            if let location = location {
+            let locationChanged: Bool
+            if let location {
+                locationChanged = currentLocation.map {
+                    $0.coordinate.latitude != location.coordinate.latitude ||
+                    $0.coordinate.longitude != location.coordinate.longitude
+                } ?? true
+            } else {
+                locationChanged = false
+            }
+
+            currentLocation = location ?? currentLocation
+            currentHeading = heading ?? currentHeading
+
+            if let location {
                 updateLocationLabel(for: location)
             }
-            refreshCelestialData()
+            if locationChanged {
+                refreshCelestialData()
+            }
         }
     }
 }
