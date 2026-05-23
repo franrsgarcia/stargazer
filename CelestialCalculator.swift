@@ -231,6 +231,22 @@ struct CelestialCalculator {
     private static func radiansToDegrees(_ radians: Double) -> Double {
         radians * 180.0 / Double.pi
     }
+
+    // Sample positions for a named body across a time span centered on centerDate.
+    static func samplePositions(name: String, centerDate: Date, location: CLLocationCoordinate2D, spanMinutes: Int = 360, stepMinutes: Int = 5) -> [(az: Double, alt: Double)] {
+        var results: [(az: Double, alt: Double)] = []
+        let half = spanMinutes / 2
+        var t = -half
+        while t <= half {
+            let date = centerDate.addingTimeInterval(TimeInterval(t * 60))
+            let bodies = bodies(at: date, location: location)
+            if let body = bodies.first(where: { $0.name == name }) {
+                results.append((az: body.azimuth, alt: body.altitude))
+            }
+            t += stepMinutes
+        }
+        return results
+    }
 }
 
 private enum Planet: String, CaseIterable {
