@@ -6,7 +6,7 @@ enum CelestialObjectType {
 }
 
 struct CelestialBody: Identifiable, Equatable {
-    let id = UUID()
+    var id: String { name }
     let name: String
     let type: CelestialObjectType
     let azimuth: Double

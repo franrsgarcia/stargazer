@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import ARKit
 import CoreLocation
+import simd
 
 enum SelectionSource {
     case none
@@ -9,9 +10,22 @@ enum SelectionSource {
     case search
 }
 
+enum SearchArrowMode {
+    case edge
+    case onBody
+}
+
+struct SearchArrowState {
+    var isVisible: Bool = false
+    var position: CGPoint = .zero
+    var angle: Double = 0
+    var mode: SearchArrowMode = .edge
+}
+
+@MainActor
 final class StargazerModel: ObservableObject {
     @Published var bodies: [CelestialBody] = []
-    @Published var bodyOverlays: [UUID: CGPoint] = [:]
+    @Published var bodyOverlays: [String: CGPoint] = [:]
     @Published var pastTrajectoryPoints: [CGPoint] = []
     @Published var futureTrajectoryPoints: [CGPoint] = []
     @Published var horizonPoints: [CGPoint] = []
@@ -24,16 +38,18 @@ final class StargazerModel: ObservableObject {
     @Published var statusText = "Stargazer"
     @Published var summaryText = "Point your device at the sky to see planets and the moon."
 
-    @Published private(set) var selectedBodyID: UUID?
     @Published private(set) var selectedBodyName: String?
     @Published private(set) var selectionSource: SelectionSource = .none
     @Published var selectedRiseText: String?
     @Published var selectedSetText: String?
-    @Published var searchArrowOpacity: Double = 0
-    @Published var searchInfoOpacity: Double = 0
+    @Published var searchArrow = SearchArrowState()
+    @Published private(set) var searchInfoRevealed = false
     @Published var viewportSize: CGSize = UIScreen.main.bounds.size
 
     private var selectedTrajectorySamples: [(date: Date, az: Double, alt: Double, isFuture: Bool)] = []
+    private var smoothedOverlays: [String: CGPoint] = [:]
+    private var overlayInFront: [String: Bool] = [:]
+    private var searchGuidanceComplete = false
 
     private let locationManager = LocationManager()
     private var currentLocation: CLLocation?
@@ -55,7 +71,7 @@ final class StargazerModel: ObservableObject {
     }
 
     func shouldRenderMarker(for body: CelestialBody) -> Bool {
-        isBodyTypeShown(body) && body.isVisible
+        isBodyTypeShown(body) && body.isVisible && bodyOverlays[body.name] != nil
     }
 
     var showInfoCard: Bool {
@@ -63,14 +79,16 @@ final class StargazerModel: ObservableObject {
         switch selectionSource {
         case .none: return false
         case .tap: return true
-        case .search: return searchInfoOpacity > 0.35
+        case .search: return searchInfoRevealed
         }
     }
 
     func startTracking() {
         locationManager.start()
         updateTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
-            self?.refreshCelestialData()
+            Task { @MainActor in
+                self?.refreshCelestialData()
+            }
         }
         refreshCelestialData()
     }
@@ -94,19 +112,15 @@ final class StargazerModel: ObservableObject {
             if let selectedName = selectedName {
                 trajectorySamples = CelestialCalculator.sampleTrajectory(name: selectedName, centerDate: date, location: coordinate, spanMinutes: 360, stepMinutes: 5)
                 let riseSetSamples = CelestialCalculator.sampleTrajectory(name: selectedName, centerDate: date, location: coordinate, spanMinutes: 1440, stepMinutes: 15)
-                let riseSet = self.deriveRiseSetStrings(from: riseSetSamples)
+                let riseSet = Self.deriveRiseSetStrings(from: riseSetSamples)
                 riseText = riseSet.rise
                 setText = riseSet.set
             }
 
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 self.bodies = bodies
                 self.summaryText = String(format: "%.0f° N, %.0f° E • %@", location.coordinate.latitude, location.coordinate.longitude, DateFormatter.localizedString(from: date, dateStyle: .none, timeStyle: .short))
                 self.statusText = "Sky model updated"
-
-                if let selectedName = selectedName, let matching = bodies.first(where: { $0.name == selectedName }) {
-                    self.selectedBodyID = matching.id
-                }
                 self.selectedTrajectorySamples = trajectorySamples
                 self.selectedRiseText = riseText
                 self.selectedSetText = setText
@@ -115,41 +129,67 @@ final class StargazerModel: ObservableObject {
     }
 
     func toggleSelection(of body: CelestialBody) {
-        if selectedBodyID == body.id && selectionSource == .tap {
+        if selectedBodyName == body.name && selectionSource == .tap {
             clearSelection()
             return
         }
+        searchGuidanceComplete = true
+        searchArrow.isVisible = false
         selectionSource = .tap
-        searchArrowOpacity = 0
-        searchInfoOpacity = 1
-        selectBody(named: body.name, matchingID: body.id)
+        searchInfoRevealed = true
+        selectBody(named: body.name)
     }
 
     func selectFromSearch(named name: String) {
+        resetSearchGuidance()
         selectionSource = .search
-        searchArrowOpacity = 1
-        searchInfoOpacity = 0
-        let matching = bodies.first(where: { $0.name == name })
-        selectBody(named: name, matchingID: matching?.id)
+        searchInfoRevealed = false
+        searchGuidanceComplete = false
+        selectBody(named: name)
+
+        guard let body = bodies.first(where: { $0.name == name }) else {
+            searchArrow.isVisible = true
+            return
+        }
+
+        if let point = projectedPoint(for: name) {
+            updateSearchGuidance(projectedPoint: point)
+        } else if viewportSize.width > 0 {
+            let azRad = body.azimuth * .pi / 180
+            let centerX = viewportSize.width / 2
+            let centerY = viewportSize.height / 2
+            let hint = CGPoint(
+                x: centerX + CGFloat(sin(azRad)) * 100,
+                y: centerY - CGFloat(cos(azRad)) * 100
+            )
+            let edge = edgePlacement(toward: hint, in: viewportSize)
+            searchArrow.isVisible = true
+            searchArrow.position = edge.point
+            searchArrow.angle = edge.angle
+            searchArrow.mode = .edge
+        } else {
+            searchArrow.isVisible = true
+        }
     }
 
     func clearSelection() {
-        selectedBodyID = nil
         selectedBodyName = nil
         selectionSource = .none
         selectedRiseText = nil
         selectedSetText = nil
         selectedTrajectorySamples = []
-        searchArrowOpacity = 0
-        searchInfoOpacity = 0
-        DispatchQueue.main.async {
-            self.pastTrajectoryPoints = []
-            self.futureTrajectoryPoints = []
-        }
+        resetSearchGuidance()
+        pastTrajectoryPoints = []
+        futureTrajectoryPoints = []
     }
 
-    private func selectBody(named name: String, matchingID: UUID?) {
-        selectedBodyID = matchingID
+    private func resetSearchGuidance() {
+        searchGuidanceComplete = false
+        searchInfoRevealed = false
+        searchArrow = SearchArrowState()
+    }
+
+    private func selectBody(named name: String) {
         selectedBodyName = name
         guard let location = currentLocation else { return }
         selectedTrajectorySamples = []
@@ -162,9 +202,9 @@ final class StargazerModel: ObservableObject {
         DispatchQueue.global(qos: .userInitiated).async {
             let trajectory = CelestialCalculator.sampleTrajectory(name: name, centerDate: date, location: coordinate, spanMinutes: 360, stepMinutes: 5)
             let riseSetSamples = CelestialCalculator.sampleTrajectory(name: name, centerDate: date, location: coordinate, spanMinutes: 1440, stepMinutes: 15)
-            let riseSet = self.deriveRiseSetStrings(from: riseSetSamples)
+            let riseSet = Self.deriveRiseSetStrings(from: riseSetSamples)
 
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 self.selectedTrajectorySamples = trajectory
                 self.selectedRiseText = riseSet.rise
                 self.selectedSetText = riseSet.set
@@ -172,28 +212,7 @@ final class StargazerModel: ObservableObject {
         }
     }
 
-    func updateSearchGuidance(for bodyName: String?) {
-        guard selectionSource == .search, let bodyName = bodyName else { return }
-        guard viewportSize.width > 0, viewportSize.height > 0 else { return }
-
-        guard let body = bodies.first(where: { $0.name == bodyName }),
-              let point = bodyOverlays[body.id] else {
-            searchArrowOpacity = 1
-            searchInfoOpacity = 0
-            return
-        }
-
-        let centerX = viewportSize.width / 2
-        let centerY = viewportSize.height / 2
-        let distance = hypot(point.x - centerX, point.y - centerY)
-        let threshold = min(viewportSize.width, viewportSize.height) * 0.14
-        let blend = max(0, min(1, (distance - threshold * 0.5) / (threshold * 0.9)))
-
-        searchArrowOpacity = blend
-        searchInfoOpacity = 1 - blend
-    }
-
-    private func deriveRiseSetStrings(from samples: [(date: Date, az: Double, alt: Double, isFuture: Bool)]) -> (rise: String, set: String) {
+    private static func deriveRiseSetStrings(from samples: [(date: Date, az: Double, alt: Double, isFuture: Bool)]) -> (rise: String, set: String) {
         var nextRise: Date?
         var nextSet: Date?
 
@@ -218,72 +237,221 @@ final class StargazerModel: ObservableObject {
         return (rise: riseText, set: setText)
     }
 
+    private func projectedPoint(for name: String) -> CGPoint? {
+        bodyOverlays[name]
+    }
+
+    private func project(
+        azimuth: Double,
+        altitude: Double,
+        viewMatrix: simd_float4x4,
+        projectionMatrix: simd_float4x4,
+        viewportSize: CGSize
+    ) -> (point: CGPoint, cameraZ: Float)? {
+        let direction = CelestialCalculator.directionVector(azimuth: azimuth, altitude: altitude)
+        let cameraPoint = viewMatrix * SIMD4<Float>(direction, 0)
+        let cameraZ = cameraPoint.z
+
+        let clip = projectionMatrix * SIMD4<Float>(cameraPoint.x, cameraPoint.y, cameraPoint.z, 1)
+        guard clip.w != 0 else { return nil }
+
+        let ndc = clip / clip.w
+        let x = CGFloat((ndc.x + 1) / 2) * viewportSize.width
+        let y = CGFloat((1 - ndc.y) / 2) * viewportSize.height
+        return (CGPoint(x: x, y: y), cameraZ)
+    }
+
+    private func isInFront(cameraZ: Float, bodyName: String) -> Bool {
+        let wasInFront = overlayInFront[bodyName] ?? false
+        let nowInFront: Bool
+        if wasInFront {
+            nowInFront = cameraZ < 0.08
+        } else {
+            nowInFront = cameraZ < -0.03
+        }
+        overlayInFront[bodyName] = nowInFront
+        return nowInFront
+    }
+
+    private func smooth(point: CGPoint, for bodyName: String, factor: CGFloat = 0.35) -> CGPoint {
+        guard let previous = smoothedOverlays[bodyName] else {
+            return point
+        }
+        return CGPoint(
+            x: previous.x + (point.x - previous.x) * factor,
+            y: previous.y + (point.y - previous.y) * factor
+        )
+    }
+
+    private func isOnScreen(_ point: CGPoint, in size: CGSize, margin: CGFloat = 24) -> Bool {
+        point.x >= margin && point.x <= size.width - margin &&
+        point.y >= margin && point.y <= size.height - margin
+    }
+
+    private func edgePlacement(toward target: CGPoint, in size: CGSize, margin: CGFloat = 40) -> (point: CGPoint, angle: Double) {
+        let cx = size.width / 2
+        let cy = size.height / 2
+        let dx = target.x - cx
+        let dy = target.y - cy
+
+        if dx == 0 && dy == 0 {
+            return (CGPoint(x: cx, y: margin), .pi / 2)
+        }
+
+        let halfW = max(size.width / 2 - margin, 1)
+        let halfH = max(size.height / 2 - margin, 1)
+        let scaleX = dx != 0 ? abs(halfW / dx) : .infinity
+        let scaleY = dy != 0 ? abs(halfH / dy) : .infinity
+        let scale = min(scaleX, scaleY)
+        return (CGPoint(x: cx + dx * scale, y: cy + dy * scale), atan2(dy, dx))
+    }
+
+    func updateSearchGuidance(projectedPoint: CGPoint?) {
+        guard selectionSource == .search, !searchGuidanceComplete else { return }
+        guard let bodyName = selectedBodyName,
+              let body = bodies.first(where: { $0.name == bodyName }),
+              viewportSize.width > 0, viewportSize.height > 0 else { return }
+
+        let size = viewportSize
+        let centerX = size.width / 2
+        let centerY = size.height / 2
+        let threshold = min(size.width, size.height) * 0.14
+
+        let target = projectedPoint ?? project(
+            azimuth: body.azimuth,
+            altitude: body.altitude,
+            viewMatrix: lastViewMatrix,
+            projectionMatrix: lastProjectionMatrix,
+            viewportSize: size
+        )?.point
+
+        guard let target else {
+            let fallback = edgePlacement(
+                toward: CGPoint(x: centerX + CGFloat(cos(body.azimuth * .pi / 180)) * 120,
+                                y: centerY - CGFloat(sin(body.azimuth * .pi / 180)) * 120),
+                in: size
+            )
+            searchArrow.isVisible = true
+            searchArrow.position = fallback.point
+            searchArrow.angle = fallback.angle
+            searchArrow.mode = .edge
+            return
+        }
+
+        let distance = hypot(target.x - centerX, target.y - centerY)
+        let onScreen = isOnScreen(target, in: size)
+
+        if onScreen {
+            searchArrow.isVisible = true
+            searchArrow.position = target
+            searchArrow.angle = atan2(target.y - centerY, target.x - centerX)
+            searchArrow.mode = .onBody
+
+            if distance < threshold {
+                searchGuidanceComplete = true
+                searchInfoRevealed = true
+                searchArrow.isVisible = false
+            }
+        } else {
+            let edge = edgePlacement(toward: target, in: size)
+            searchArrow.isVisible = true
+            searchArrow.position = edge.point
+            searchArrow.angle = edge.angle
+            searchArrow.mode = .edge
+        }
+    }
+
+    private var lastViewMatrix: simd_float4x4 = matrix_identity_float4x4
+    private var lastProjectionMatrix: simd_float4x4 = matrix_identity_float4x4
+
     func updateOverlays(from frame: ARFrame, viewportSize: CGSize) {
         let viewMatrix = frame.camera.viewMatrix(for: .portrait)
         let projectionMatrix = frame.camera.projectionMatrix(for: .portrait, viewportSize: viewportSize, zNear: 0.01, zFar: 1000)
+        lastViewMatrix = viewMatrix
+        lastProjectionMatrix = projectionMatrix
 
-        var overlays: [UUID: CGPoint] = [:]
-        for body in bodies where body.isVisible {
-            let direction = CelestialCalculator.directionVector(azimuth: body.azimuth, altitude: body.altitude)
-            let cameraPoint = viewMatrix * SIMD4<Float>(direction, 0)
-            guard cameraPoint.z < 0 else { continue }
+        var overlays: [String: CGPoint] = [:]
 
-            let clip = projectionMatrix * SIMD4<Float>(cameraPoint.x, cameraPoint.y, cameraPoint.z, 1)
-            guard clip.w != 0 else { continue }
-            let ndc = clip / clip.w
-            let x = CGFloat((ndc.x + 1) / 2) * viewportSize.width
-            let y = CGFloat((1 - ndc.y) / 2) * viewportSize.height
-            overlays[body.id] = CGPoint(x: x, y: y)
+        for body in bodies where isBodyTypeShown(body) && body.isVisible {
+            guard let projection = project(
+                azimuth: body.azimuth,
+                altitude: body.altitude,
+                viewMatrix: viewMatrix,
+                projectionMatrix: projectionMatrix,
+                viewportSize: viewportSize
+            ), isInFront(cameraZ: projection.cameraZ, bodyName: body.name) else {
+                continue
+            }
+
+            let smoothed = smooth(point: projection.point, for: body.name)
+            smoothedOverlays[body.name] = smoothed
+            overlays[body.name] = smoothed
+        }
+
+        for name in smoothedOverlays.keys where overlays[name] == nil {
+            if overlayInFront[name] != true {
+                smoothedOverlays.removeValue(forKey: name)
+            }
         }
 
         var pastPoints: [CGPoint] = []
         var futurePoints: [CGPoint] = []
         if selectedBodyName != nil, !selectedTrajectorySamples.isEmpty {
             for sample in selectedTrajectorySamples {
-                let dir = CelestialCalculator.directionVector(azimuth: sample.az, altitude: sample.alt)
-                let cameraPoint = viewMatrix * SIMD4<Float>(dir, 0)
-                guard cameraPoint.z < 0 else { continue }
-                let clip = projectionMatrix * SIMD4<Float>(cameraPoint.x, cameraPoint.y, cameraPoint.z, 1)
-                guard clip.w != 0 else { continue }
-                let ndc = clip / clip.w
-                let x = CGFloat((ndc.x + 1) / 2) * viewportSize.width
-                let y = CGFloat((1 - ndc.y) / 2) * viewportSize.height
-                let point = CGPoint(x: x, y: y)
+                guard let projection = project(
+                    azimuth: sample.az,
+                    altitude: sample.alt,
+                    viewMatrix: viewMatrix,
+                    projectionMatrix: projectionMatrix,
+                    viewportSize: viewportSize
+                ), projection.cameraZ < 0.05 else { continue }
+
                 if sample.isFuture {
-                    futurePoints.append(point)
+                    futurePoints.append(projection.point)
                 } else {
-                    pastPoints.append(point)
+                    pastPoints.append(projection.point)
                 }
             }
         }
 
         var horizonPts: [CGPoint] = []
         for az in stride(from: 0.0, to: 360.0, by: 5.0) {
-            let dir = CelestialCalculator.directionVector(azimuth: az, altitude: 0.0)
-            let cameraPoint = viewMatrix * SIMD4<Float>(dir, 0)
-            guard cameraPoint.z < 0 else { continue }
-            let clip = projectionMatrix * SIMD4<Float>(cameraPoint.x, cameraPoint.y, cameraPoint.z, 1)
-            guard clip.w != 0 else { continue }
-            let ndc = clip / clip.w
-            let x = CGFloat((ndc.x + 1) / 2) * viewportSize.width
-            let y = CGFloat((1 - ndc.y) / 2) * viewportSize.height
-            horizonPts.append(CGPoint(x: x, y: y))
+            guard let projection = project(
+                azimuth: az,
+                altitude: 0.0,
+                viewMatrix: viewMatrix,
+                projectionMatrix: projectionMatrix,
+                viewportSize: viewportSize
+            ), projection.cameraZ < 0.05 else { continue }
+            horizonPts.append(projection.point)
         }
 
-        DispatchQueue.main.async {
-            self.bodyOverlays = overlays
-            self.pastTrajectoryPoints = pastPoints
-            self.futureTrajectoryPoints = futurePoints
-            self.horizonPoints = horizonPts
-            self.updateSearchGuidance(for: self.selectedBodyName)
+        bodyOverlays = overlays
+        pastTrajectoryPoints = pastPoints
+        futureTrajectoryPoints = futurePoints
+        horizonPoints = horizonPts
+
+        let searchPoint = selectedBodyName.flatMap { name in
+            bodies.first(where: { $0.name == name }).flatMap { body in
+                project(
+                    azimuth: body.azimuth,
+                    altitude: body.altitude,
+                    viewMatrix: viewMatrix,
+                    projectionMatrix: projectionMatrix,
+                    viewportSize: viewportSize
+                )?.point
+            }
         }
+        updateSearchGuidance(projectedPoint: searchPoint)
     }
 }
 
 extension StargazerModel: LocationManagerDelegate {
-    func locationManager(didUpdate location: CLLocation?, heading: CLHeading?) {
-        currentLocation = location
-        currentHeading = heading
-        refreshCelestialData()
+    nonisolated func locationManager(didUpdate location: CLLocation?, heading: CLHeading?) {
+        Task { @MainActor in
+            currentLocation = location
+            currentHeading = heading
+            refreshCelestialData()
+        }
     }
 }

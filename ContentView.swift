@@ -5,7 +5,7 @@ struct ContentView: View {
     @State private var showSearchSheet = false
     @State private var searchQuery = ""
 
-    private let bottomBarHeight: CGFloat = 56
+    private let bottomBarHeight: CGFloat = 62
 
     private func horizonLineAngle(for points: [CGPoint]) -> Double {
         let screenCenterX = model.viewportSize.width / 2
@@ -54,28 +54,6 @@ struct ContentView: View {
         let preferRight = markerPoint.x < model.viewportSize.width * 0.62
         let x = preferRight ? markerPoint.x + sideOffset : markerPoint.x - sideOffset
         return CGPoint(x: x, y: markerPoint.y)
-    }
-
-    private func edgeArrowPlacement(toward target: CGPoint) -> (point: CGPoint, angle: Double) {
-        let size = model.viewportSize
-        let cx = size.width / 2
-        let cy = size.height / 2
-        let margin: CGFloat = 36
-        var dx = target.x - cx
-        var dy = target.y - cy
-
-        if dx == 0 && dy == 0 {
-            return (CGPoint(x: cx, y: margin), .pi / 2)
-        }
-
-        let halfW = max(size.width / 2 - margin, 1)
-        let halfH = max(size.height / 2 - margin, 1)
-        let scaleX = dx != 0 ? abs(halfW / dx) : .infinity
-        let scaleY = dy != 0 ? abs(halfH / dy) : .infinity
-        let scale = min(scaleX, scaleY)
-        let edgeX = cx + dx * scale
-        let edgeY = cy + dy * scale
-        return (CGPoint(x: edgeX, y: edgeY), atan2(dy, dx))
     }
 
     @ViewBuilder
@@ -167,22 +145,15 @@ struct ContentView: View {
 
     @ViewBuilder
     private var searchGuidanceArrow: some View {
-        if model.selectionSource == .search,
-           let name = model.selectedBodyName,
-           let body = model.bodies.first(where: { $0.name == name }),
-           let target = model.bodyOverlays[body.id],
-           model.searchArrowOpacity > 0.02 {
-            let placement = edgeArrowPlacement(toward: target)
-
+        if model.searchArrow.isVisible {
             Image(systemName: "arrow.up")
-                .font(.system(size: 22, weight: .bold))
+                .font(.system(size: model.searchArrow.mode == .onBody ? 26 : 22, weight: .bold))
                 .foregroundColor(.white)
-                .shadow(color: .black.opacity(0.5), radius: 4)
-                .rotationEffect(.radians(placement.angle + .pi / 2))
-                .position(placement.point)
-                .opacity(model.searchArrowOpacity)
-                .animation(.easeInOut(duration: 0.25), value: model.searchArrowOpacity)
+                .shadow(color: .black.opacity(0.55), radius: 5)
+                .rotationEffect(.radians(model.searchArrow.angle + .pi / 2))
+                .position(model.searchArrow.position)
                 .allowsHitTesting(false)
+                .transition(.opacity)
         }
     }
 
@@ -214,81 +185,81 @@ struct ContentView: View {
     }
 
     var body: some View {
-        GeometryReader { geometry in
-            let size = geometry.size
+        VStack(spacing: 0) {
+            GeometryReader { geometry in
+                let size = geometry.size
 
-            ZStack {
-                ARViewContainer()
-                    .edgesIgnoringSafeArea(.all)
+                ZStack {
+                    ARViewContainer()
+                        .edgesIgnoringSafeArea(.all)
 
-                trajectoryView
-                    .allowsHitTesting(false)
+                    trajectoryView
+                        .allowsHitTesting(false)
 
-                ForEach(model.bodies) { body in
-                    if model.shouldRenderMarker(for: body), let point = model.bodyOverlays[body.id] {
-                        let isSelected = model.selectedBodyID == body.id
+                    ForEach(model.bodies) { body in
+                        if model.shouldRenderMarker(for: body), let point = model.bodyOverlays[body.name] {
+                            let isSelected = model.selectedBodyName == body.name
 
-                        bodyMarker(for: body, isSelected: isSelected)
-                            .position(point)
-                            .onTapGesture {
-                                model.toggleSelection(of: body)
+                            bodyMarker(for: body, isSelected: isSelected)
+                                .position(point)
+                                .onTapGesture {
+                                    model.toggleSelection(of: body)
+                                }
+
+                            if isSelected && model.showInfoCard {
+                                bodyLabel(for: body)
+                                    .position(labelPosition(for: point))
                             }
-
-                        if isSelected && (model.selectionSource == .tap || model.searchInfoOpacity > 0.35) {
-                            bodyLabel(for: body)
-                                .position(labelPosition(for: point))
                         }
                     }
+
+                    if model.showHorizon, model.horizonPoints.count > 1 {
+                        let pts = model.horizonPoints
+                        smoothPath(from: pts)
+                            .stroke(Color.white.opacity(0.9), style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
+                            .allowsHitTesting(false)
+
+                        let screenCenterX = size.width / 2
+                        let labelY = horizonLabelYPosition(for: pts)
+                        let angle = horizonLineAngle(for: pts)
+
+                        Text("HORIZON")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(Color(white: 0.78))
+                            .fixedSize(horizontal: true, vertical: true)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 2)
+                            .background(Color.white)
+                            .cornerRadius(4)
+                            .rotationEffect(.radians(angle))
+                            .position(x: screenCenterX, y: labelY)
+                            .allowsHitTesting(false)
+                    }
+
+                    searchGuidanceArrow
+
+                    if model.showInfoCard,
+                       let selected = model.bodies.first(where: { $0.name == model.selectedBodyName }) {
+                        infoCard(for: selected)
+                    }
                 }
-
-                if model.showHorizon, model.horizonPoints.count > 1 {
-                    let pts = model.horizonPoints
-                    smoothPath(from: pts)
-                        .stroke(Color.white.opacity(0.9), style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
-                        .allowsHitTesting(false)
-
-                    let screenCenterX = size.width / 2
-                    let labelY = horizonLabelYPosition(for: pts)
-                    let angle = horizonLineAngle(for: pts)
-
-                    Text("HORIZON")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(Color(white: 0.78))
-                        .fixedSize(horizontal: true, vertical: true)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 2)
-                        .background(Color.white)
-                        .cornerRadius(4)
-                        .rotationEffect(.radians(angle))
-                        .position(x: screenCenterX, y: labelY)
-                        .allowsHitTesting(false)
+                .onAppear {
+                    model.viewportSize = size
                 }
-
-                searchGuidanceArrow
-
-                if model.showInfoCard,
-                   let selected = model.bodies.first(where: { $0.name == model.selectedBodyName }) {
-                    infoCard(for: selected, bottomInset: bottomBarHeight + geometry.safeAreaInsets.bottom)
-                        .opacity(model.selectionSource == .search ? model.searchInfoOpacity : 1)
-                        .animation(.easeInOut(duration: 0.25), value: model.searchInfoOpacity)
+                .onChange(of: size) { newSize in
+                    model.viewportSize = newSize
                 }
             }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                bottomMenuBar
-            }
-            .onAppear {
-                model.viewportSize = size
-            }
-            .onChange(of: size) { newSize in
-                model.viewportSize = newSize
-            }
+
+            bottomMenuBar
         }
-        .edgesIgnoringSafeArea(.all)
+        .background(Color.black)
         .sheet(isPresented: $showSearchSheet) {
             searchSheet
         }
     }
 
+    @ViewBuilder
     private var bottomMenuBar: some View {
         HStack(spacing: 0) {
             bottomBarItem(title: "Search", systemImage: "magnifyingglass") {
@@ -311,21 +282,35 @@ struct ContentView: View {
                 .background(Color.white.opacity(0.2))
 
             Menu {
-                Toggle("Stars", isOn: $model.showStars)
-                Toggle("Planets", isOn: $model.showPlanets)
-                Toggle("Moon", isOn: $model.showMoon)
-                Toggle("Sun", isOn: $model.showSun)
-                Toggle("Horizon", isOn: $model.showHorizon)
+                visibilityCheckbox(title: "Stars", isOn: $model.showStars)
+                visibilityCheckbox(title: "Planets", isOn: $model.showPlanets)
+                visibilityCheckbox(title: "Moon", isOn: $model.showMoon)
+                visibilityCheckbox(title: "Sun", isOn: $model.showSun)
+                visibilityCheckbox(title: "Horizon", isOn: $model.showHorizon)
             } label: {
                 bottomBarLabel(title: "Hide/Show", systemImage: "eye")
             }
             .frame(maxWidth: .infinity)
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 12)
         .padding(.top, 10)
-        .padding(.bottom, 8)
-        .background(.ultraThinMaterial)
-        .overlay(Rectangle().frame(height: 0.5).foregroundColor(Color.white.opacity(0.12)), alignment: .top)
+        .padding(.bottom, 4)
+        .frame(height: bottomBarHeight)
+        .frame(maxWidth: .infinity)
+        .modifier(LiquidGlassBarModifier())
+        .background(Color.black)
+    }
+
+    private func visibilityCheckbox(title: String, isOn: Binding<Bool>) -> some View {
+        Button {
+            isOn.wrappedValue.toggle()
+        } label: {
+            Label {
+                Text(title)
+            } icon: {
+                Image(systemName: isOn.wrappedValue ? "checkmark.square.fill" : "square")
+            }
+        }
     }
 
     private func bottomBarItem(title: String, systemImage: String, action: @escaping () -> Void) -> some View {
@@ -345,7 +330,7 @@ struct ContentView: View {
         }
         .foregroundColor(.white)
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 4)
+        .padding(.vertical, 2)
     }
 
     private var searchSheet: some View {
@@ -392,7 +377,7 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private func infoCard(for selected: CelestialBody, bottomInset: CGFloat) -> some View {
+    private func infoCard(for selected: CelestialBody) -> some View {
         VStack {
             Spacer()
             VStack(spacing: 12) {
@@ -452,7 +437,7 @@ struct ContentView: View {
             .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.06), lineWidth: 1))
             .cornerRadius(20)
             .padding(.horizontal, 12)
-            .padding(.bottom, bottomInset + 12)
+            .padding(.bottom, 12)
         }
     }
 
@@ -476,5 +461,19 @@ struct ContentView: View {
         .background(.ultraThinMaterial)
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.06), lineWidth: 1))
         .cornerRadius(12)
+    }
+}
+
+private struct LiquidGlassBarModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content
+                .glassEffect(.regular.tint(.white.opacity(0.12)), in: .rect)
+                .overlay(Rectangle().frame(height: 0.5).foregroundColor(Color.white.opacity(0.15)), alignment: .top)
+        } else {
+            content
+                .background(.ultraThinMaterial)
+                .overlay(Rectangle().frame(height: 0.5).foregroundColor(Color.white.opacity(0.12)), alignment: .top)
+        }
     }
 }
