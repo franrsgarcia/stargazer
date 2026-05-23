@@ -26,8 +26,8 @@ struct SearchArrowState {
 final class StargazerModel: ObservableObject {
     @Published var bodies: [CelestialBody] = []
     @Published var bodyOverlays: [String: CGPoint] = [:]
-    @Published var pastTrajectoryPoints: [CGPoint] = []
-    @Published var futureTrajectoryPoints: [CGPoint] = []
+    @Published var pastTrajectorySegments: [[CGPoint]] = []
+    @Published var futureTrajectorySegments: [[CGPoint]] = []
     @Published var horizonPoints: [CGPoint] = []
     @Published var showHorizon: Bool = true
     @Published var showCameraFeed: Bool = true
@@ -179,8 +179,8 @@ final class StargazerModel: ObservableObject {
         selectedSetText = nil
         selectedTrajectorySamples = []
         resetSearchGuidance()
-        pastTrajectoryPoints = []
-        futureTrajectoryPoints = []
+        pastTrajectorySegments = []
+        futureTrajectorySegments = []
     }
 
     private func resetSearchGuidance() {
@@ -191,6 +191,8 @@ final class StargazerModel: ObservableObject {
 
     private func selectBody(named name: String) {
         selectedBodyName = name
+        pastTrajectorySegments = []
+        futureTrajectorySegments = []
         guard let location = currentLocation else { return }
         selectedTrajectorySamples = []
         selectedRiseText = nil
@@ -398,6 +400,60 @@ final class StargazerModel: ObservableObject {
     private var lastViewMatrix: simd_float4x4 = matrix_identity_float4x4
     private var lastProjectionMatrix: simd_float4x4 = matrix_identity_float4x4
 
+    private func buildTrajectorySegments(
+        from samples: [(date: Date, az: Double, alt: Double, isFuture: Bool)],
+        viewMatrix: simd_float4x4,
+        projectionMatrix: simd_float4x4,
+        viewportSize: CGSize,
+        maxJump: CGFloat
+    ) -> [[CGPoint]] {
+        var segments: [[CGPoint]] = []
+        var current: [CGPoint] = []
+
+        func flush() {
+            if current.count > 1 {
+                segments.append(current)
+            }
+            current = []
+        }
+
+        for sample in samples {
+            guard sample.alt > -2 else {
+                flush()
+                continue
+            }
+            guard let projection = project(
+                azimuth: sample.az,
+                altitude: sample.alt,
+                viewMatrix: viewMatrix,
+                projectionMatrix: projectionMatrix,
+                viewportSize: viewportSize
+            ), projection.cameraZ < -0.04 else {
+                flush()
+                continue
+            }
+
+            let point = projection.point
+            let onScreen = point.x >= -40 && point.x <= viewportSize.width + 40 &&
+                point.y >= -40 && point.y <= viewportSize.height + 40
+            guard onScreen else {
+                flush()
+                continue
+            }
+
+            if let last = current.last {
+                let distance = hypot(point.x - last.x, point.y - last.y)
+                if distance > maxJump {
+                    flush()
+                }
+            }
+            current.append(point)
+        }
+
+        flush()
+        return segments
+    }
+
     func updateOverlays(from frame: ARFrame, viewportSize: CGSize) {
         let viewMatrix = frame.camera.viewMatrix(for: .portrait)
         let projectionMatrix = frame.camera.projectionMatrix(for: .portrait, viewportSize: viewportSize, zNear: 0.01, zFar: 1000)
@@ -428,24 +484,24 @@ final class StargazerModel: ObservableObject {
             }
         }
 
-        var pastPoints: [CGPoint] = []
-        var futurePoints: [CGPoint] = []
+        var pastSegments: [[CGPoint]] = []
+        var futureSegments: [[CGPoint]] = []
         if selectedBodyName != nil, !selectedTrajectorySamples.isEmpty {
-            for sample in selectedTrajectorySamples {
-                guard let projection = project(
-                    azimuth: sample.az,
-                    altitude: sample.alt,
-                    viewMatrix: viewMatrix,
-                    projectionMatrix: projectionMatrix,
-                    viewportSize: viewportSize
-                ), projection.cameraZ < 0.05 else { continue }
-
-                if sample.isFuture {
-                    futurePoints.append(projection.point)
-                } else {
-                    pastPoints.append(projection.point)
-                }
-            }
+            let maxJump = min(viewportSize.width, viewportSize.height) * 0.18
+            pastSegments = buildTrajectorySegments(
+                from: selectedTrajectorySamples.filter { !$0.isFuture },
+                viewMatrix: viewMatrix,
+                projectionMatrix: projectionMatrix,
+                viewportSize: viewportSize,
+                maxJump: maxJump
+            )
+            futureSegments = buildTrajectorySegments(
+                from: selectedTrajectorySamples.filter { $0.isFuture },
+                viewMatrix: viewMatrix,
+                projectionMatrix: projectionMatrix,
+                viewportSize: viewportSize,
+                maxJump: maxJump
+            )
         }
 
         var horizonPts: [CGPoint] = []
@@ -461,8 +517,8 @@ final class StargazerModel: ObservableObject {
         }
 
         bodyOverlays = overlays
-        pastTrajectoryPoints = pastPoints
-        futureTrajectoryPoints = futurePoints
+        pastTrajectorySegments = pastSegments
+        futureTrajectorySegments = futureSegments
         horizonPoints = horizonPts
 
         let searchPoint = selectedBodyName.flatMap { name in

@@ -63,38 +63,28 @@ struct ContentView: View {
     @ViewBuilder
     private var trajectoryView: some View {
         if model.selectedBodyName != nil {
-            if !model.pastTrajectoryPoints.isEmpty {
-                let pts = model.pastTrajectoryPoints
-                if pts.count > 1 {
-                    ForEach(0..<(pts.count - 1), id: \.self) { i in
-                        let start = pts[i]
-                        let end = pts[i + 1]
-                        let opacity = segmentOpacity(index: i, totalCount: pts.count, baseOpacity: 0.35)
-
-                        Path { path in
-                            path.move(to: start)
-                            path.addLine(to: end)
-                        }
-                        .stroke(Color.white.opacity(opacity), lineWidth: 1)
-                    }
-                }
+            ForEach(Array(model.pastTrajectorySegments.enumerated()), id: \.offset) { _, pts in
+                trajectorySegments(pts, baseOpacity: 0.35, lineWidth: 1)
             }
+            ForEach(Array(model.futureTrajectorySegments.enumerated()), id: \.offset) { _, pts in
+                trajectorySegments(pts, baseOpacity: 1.0, lineWidth: 2)
+            }
+        }
+    }
 
-            if !model.futureTrajectoryPoints.isEmpty {
-                let pts = model.futureTrajectoryPoints
-                if pts.count > 1 {
-                    ForEach(0..<(pts.count - 1), id: \.self) { i in
-                        let start = pts[i]
-                        let end = pts[i + 1]
-                        let opacity = segmentOpacity(index: i, totalCount: pts.count, baseOpacity: 1.0)
+    @ViewBuilder
+    private func trajectorySegments(_ pts: [CGPoint], baseOpacity: Double, lineWidth: CGFloat) -> some View {
+        if pts.count > 1 {
+            ForEach(0..<(pts.count - 1), id: \.self) { i in
+                let start = pts[i]
+                let end = pts[i + 1]
+                let opacity = segmentOpacity(index: i, totalCount: pts.count, baseOpacity: baseOpacity)
 
-                        Path { path in
-                            path.move(to: start)
-                            path.addLine(to: end)
-                        }
-                        .stroke(Color.white.opacity(opacity), lineWidth: 2)
-                    }
+                Path { path in
+                    path.move(to: start)
+                    path.addLine(to: end)
                 }
+                .stroke(Color.white.opacity(opacity), lineWidth: lineWidth)
             }
         }
     }
@@ -339,24 +329,20 @@ struct ContentView: View {
         .presentationDragIndicator(.visible)
     }
 
-    @ViewBuilder
     private func visibilityRow(title: String, isOn: Binding<Bool>) -> some View {
-        if #available(iOS 17.0, *) {
-            Toggle(title, isOn: isOn)
-                .toggleStyle(.checkbox)
-        } else {
-            Button {
-                isOn.wrappedValue.toggle()
-            } label: {
-                HStack {
-                    Text(title)
-                        .foregroundStyle(.primary)
-                    Spacer()
-                    Image(systemName: isOn.wrappedValue ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(isOn.wrappedValue ? Color.accentColor : Color.secondary)
-                }
+        Button {
+            isOn.wrappedValue.toggle()
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: isOn.wrappedValue ? "checkmark.square.fill" : "square")
+                    .font(.system(size: 20))
+                    .foregroundStyle(isOn.wrappedValue ? Color.accentColor : Color.secondary)
+                Text(title)
+                    .foregroundStyle(.primary)
+                Spacer()
             }
         }
+        .buttonStyle(.plain)
     }
 
     private var searchSheet: some View {
