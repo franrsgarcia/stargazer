@@ -22,6 +22,14 @@ struct SearchArrowState {
     var mode: SearchArrowMode = .edge
 }
 
+struct CardinalMarker: Identifiable {
+    var id: String { label }
+    let label: String
+    let point: CGPoint
+    let rotation: Double
+    let isNorth: Bool
+}
+
 @MainActor
 final class StargazerModel: ObservableObject {
     @Published var bodies: [CelestialBody] = []
@@ -45,8 +53,17 @@ final class StargazerModel: ObservableObject {
     @Published var searchArrow = SearchArrowState()
     @Published private(set) var searchInfoRevealed = false
     @Published var viewportSize: CGSize = UIScreen.main.bounds.size
+    @Published var locationLabel = "Locating..."
+    @Published var cardinalMarkers: [CardinalMarker] = []
+    @Published var isCalibrated = false
+    @Published var calibrationMessage = ""
 
     private var selectedTrajectorySamples: [(date: Date, az: Double, alt: Double, isFuture: Bool)] = []
+    private var azimuthCalibrationOffset: Double = 0
+    private var altitudeCalibrationOffset: Double = 0
+    private var lastCameraTransform: simd_float4x4 = matrix_identity_float4x4
+    private var lastGeocodedCoordinate: CLLocationCoordinate2D?
+    private let geocoder = CLGeocoder()
     private var smoothedOverlays: [String: CGPoint] = [:]
     private var overlayInFront: [String: Bool] = [:]
     private var searchGuidanceComplete = false
@@ -58,8 +75,87 @@ final class StargazerModel: ObservableObject {
 
     static let searchableNames = ["Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn"]
 
+    private static let cardinalDirections: [(String, Double)] = [
+        ("N", 0), ("NE", 45), ("E", 90), ("SE", 135),
+        ("S", 180), ("SW", 225), ("W", 270), ("NW", 315)
+    ]
+
     init() {
         locationManager.delegate = self
+        let saved = SkyCalibration.load()
+        azimuthCalibrationOffset = saved.azimuth
+        altitudeCalibrationOffset = saved.altitude
+        isCalibrated = saved.isCalibrated
+    }
+
+    func calibrateToNorth() {
+        guard let heading = currentHeading else {
+            calibrationMessage = "Compass heading is not available yet."
+            return
+        }
+        let north = heading.trueHeading >= 0 ? heading.trueHeading : heading.magneticHeading
+        let deviceAzimuth = SkyCalibration.cameraAzimuthDegrees(from: lastCameraTransform)
+        azimuthCalibrationOffset = SkyCalibration.northCalibrationOffset(deviceAzimuth: deviceAzimuth, trueNorth: north)
+        SkyCalibration.save(azimuthOffset: azimuthCalibrationOffset, altitudeOffset: altitudeCalibrationOffset)
+        isCalibrated = true
+        calibrationMessage = String(format: "Aligned to north (%.1f° correction).", azimuthCalibrationOffset)
+        refreshCelestialData()
+    }
+
+    func calibrateToSun() {
+        guard let sun = bodies.first(where: { $0.name == "Sun" }) else {
+            calibrationMessage = "Sun position is not available."
+            return
+        }
+        let deviceAzimuth = SkyCalibration.cameraAzimuthDegrees(from: lastCameraTransform)
+        azimuthCalibrationOffset = SkyCalibration.sunCalibrationOffset(deviceAzimuth: deviceAzimuth, sunAzimuth: sun.azimuth)
+        SkyCalibration.save(azimuthOffset: azimuthCalibrationOffset, altitudeOffset: altitudeCalibrationOffset)
+        isCalibrated = true
+        calibrationMessage = String(format: "Aligned to the Sun (%.1f° correction).", azimuthCalibrationOffset)
+        refreshCelestialData()
+    }
+
+    func calibrateHorizon() {
+        let cameraAltitude = SkyCalibration.cameraAltitudeDegrees(from: lastCameraTransform)
+        altitudeCalibrationOffset = -cameraAltitude
+        SkyCalibration.save(azimuthOffset: azimuthCalibrationOffset, altitudeOffset: altitudeCalibrationOffset)
+        isCalibrated = true
+        calibrationMessage = String(format: "Horizon leveled (%.1f° pitch correction).", altitudeCalibrationOffset)
+        refreshCelestialData()
+    }
+
+    func resetCalibration() {
+        azimuthCalibrationOffset = 0
+        altitudeCalibrationOffset = 0
+        SkyCalibration.reset()
+        isCalibrated = false
+        calibrationMessage = "Calibration reset."
+        refreshCelestialData()
+    }
+
+    private func updateLocationLabel(for location: CLLocation) {
+        let coordinate = location.coordinate
+        if let last = lastGeocodedCoordinate {
+            let previous = CLLocation(latitude: last.latitude, longitude: last.longitude)
+            if location.distance(from: previous) < 200 { return }
+        }
+        lastGeocodedCoordinate = coordinate
+
+        geocoder.reverseGeocodeLocation(location) { [weak self] placemarks, _ in
+            guard let self else { return }
+            let place = placemarks?.first
+            let city = place?.locality ?? place?.subAdministrativeArea ?? place?.name ?? ""
+            let country = place?.country ?? ""
+            let label = [city, country].filter { !$0.isEmpty }.joined(separator: ", ")
+
+            Task { @MainActor in
+                if !label.isEmpty {
+                    self.locationLabel = label
+                } else {
+                    self.locationLabel = String(format: "%.2f°, %.2f°", coordinate.latitude, coordinate.longitude)
+                }
+            }
+        }
     }
 
     func isBodyTypeShown(_ body: CelestialBody) -> Bool {
@@ -250,7 +346,12 @@ final class StargazerModel: ObservableObject {
         projectionMatrix: simd_float4x4,
         viewportSize: CGSize
     ) -> (point: CGPoint, cameraZ: Float)? {
-        let direction = CelestialCalculator.directionVector(azimuth: azimuth, altitude: altitude)
+        let direction = CelestialCalculator.directionVector(
+            azimuth: azimuth,
+            altitude: altitude,
+            azimuthOffset: azimuthCalibrationOffset,
+            altitudeOffset: altitudeCalibrationOffset
+        )
         let cameraPoint = viewMatrix * SIMD4<Float>(direction, 0)
         let cameraZ = cameraPoint.z
 
@@ -454,11 +555,30 @@ final class StargazerModel: ObservableObject {
         return segments
     }
 
+    private func horizonTangentAngle(at point: CGPoint, in horizonPts: [CGPoint]) -> Double {
+        guard horizonPts.count >= 2 else { return 0 }
+        var bestIndex = 0
+        var bestDistance = CGFloat.greatestFiniteMagnitude
+        for i in 0..<horizonPts.count {
+            let distance = hypot(horizonPts[i].x - point.x, horizonPts[i].y - point.y)
+            if distance < bestDistance {
+                bestDistance = distance
+                bestIndex = i
+            }
+        }
+        let start = max(0, bestIndex - 1)
+        let end = min(horizonPts.count - 1, bestIndex + 1)
+        let dx = horizonPts[end].x - horizonPts[start].x
+        let dy = horizonPts[end].y - horizonPts[start].y
+        return atan2(dy, dx)
+    }
+
     func updateOverlays(from frame: ARFrame, viewportSize: CGSize) {
         let viewMatrix = frame.camera.viewMatrix(for: .portrait)
         let projectionMatrix = frame.camera.projectionMatrix(for: .portrait, viewportSize: viewportSize, zNear: 0.01, zFar: 1000)
         lastViewMatrix = viewMatrix
         lastProjectionMatrix = projectionMatrix
+        lastCameraTransform = frame.camera.transform
 
         var overlays: [String: CGPoint] = [:]
 
@@ -516,10 +636,37 @@ final class StargazerModel: ObservableObject {
             horizonPts.append(projection.point)
         }
 
+        var cardinals: [CardinalMarker] = []
+        if showHorizon {
+            for (label, azimuth) in Self.cardinalDirections {
+                guard let projection = project(
+                    azimuth: azimuth,
+                    altitude: 0,
+                    viewMatrix: viewMatrix,
+                    projectionMatrix: projectionMatrix,
+                    viewportSize: viewportSize
+                ), projection.cameraZ < 0.05 else { continue }
+
+                let tangent = horizonTangentAngle(at: projection.point, in: horizonPts)
+                let labelOffset: CGFloat = 13
+                let labelPoint = CGPoint(
+                    x: projection.point.x + CGFloat(sin(tangent)) * labelOffset,
+                    y: projection.point.y - CGFloat(cos(tangent)) * labelOffset
+                )
+                cardinals.append(CardinalMarker(
+                    label: label,
+                    point: labelPoint,
+                    rotation: tangent,
+                    isNorth: label == "N"
+                ))
+            }
+        }
+
         bodyOverlays = overlays
         pastTrajectorySegments = pastSegments
         futureTrajectorySegments = futureSegments
         horizonPoints = horizonPts
+        cardinalMarkers = cardinals
 
         let searchPoint = selectedBodyName.flatMap { name in
             bodies.first(where: { $0.name == name }).flatMap { body in
@@ -541,6 +688,9 @@ extension StargazerModel: LocationManagerDelegate {
         Task { @MainActor in
             currentLocation = location
             currentHeading = heading
+            if let location = location {
+                updateLocationLabel(for: location)
+            }
             refreshCelestialData()
         }
     }

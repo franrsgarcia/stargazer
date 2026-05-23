@@ -4,6 +4,7 @@ struct ContentView: View {
     @EnvironmentObject private var model: StargazerModel
     @State private var showSearchSheet = false
     @State private var showVisibilitySheet = false
+    @State private var showCalibrationSheet = false
     @State private var searchQuery = ""
 
     private func horizonLineAngle(for points: [CGPoint]) -> Double {
@@ -50,10 +51,7 @@ struct ContentView: View {
 
     private func labelPosition(for markerPoint: CGPoint, body: CelestialBody, isSelected: Bool) -> CGPoint {
         let markerRadius = markerSize(for: body, isSelected: isSelected) / 2
-        let hitRadius: CGFloat = 22
-        let gap: CGFloat = 16
-        let labelHalfWidth = CGFloat(body.displayLabel.count) * 3.8 + 18
-        let horizontalOffset = hitRadius + markerRadius + gap + labelHalfWidth
+        let horizontalOffset = markerRadius + 38
 
         let preferRight = markerPoint.x < model.viewportSize.width * 0.55
         let x = preferRight ? markerPoint.x + horizontalOffset : markerPoint.x - horizontalOffset
@@ -187,6 +185,8 @@ struct ContentView: View {
                 trajectoryView
                     .allowsHitTesting(false)
 
+                topOverlayBar
+
                 ForEach(model.bodies) { body in
                     if model.shouldRenderMarker(for: body), let point = model.bodyOverlays[body.name] {
                         let isSelected = model.selectedBodyName == body.name
@@ -225,6 +225,13 @@ struct ContentView: View {
                         .rotationEffect(.radians(angle))
                         .position(x: screenCenterX, y: labelY)
                         .allowsHitTesting(false)
+
+                    ForEach(model.cardinalMarkers) { marker in
+                        cardinalLabel(marker)
+                            .rotationEffect(.radians(marker.rotation))
+                            .position(marker.point)
+                            .allowsHitTesting(false)
+                    }
                 }
 
                 searchGuidanceArrow
@@ -251,6 +258,108 @@ struct ContentView: View {
         .sheet(isPresented: $showVisibilitySheet) {
             visibilitySheet
         }
+        .sheet(isPresented: $showCalibrationSheet) {
+            calibrationSheet
+        }
+    }
+
+    private var topOverlayBar: some View {
+        VStack {
+            HStack(alignment: .top) {
+                Text(model.locationLabel)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .modifier(GlassChipModifier(cornerRadius: 10))
+
+                Spacer()
+
+                Button {
+                    showCalibrationSheet = true
+                } label: {
+                    Image(systemName: model.isCalibrated ? "checkmark.circle.fill" : "scope")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(10)
+                        .modifier(GlassChipModifier(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 8)
+
+            Spacer()
+        }
+        .allowsHitTesting(true)
+    }
+
+    @ViewBuilder
+    private func cardinalLabel(_ marker: CardinalMarker) -> some View {
+        Text(marker.label)
+            .font(.system(size: 8, weight: .bold))
+            .foregroundColor(marker.isNorth ? .white : Color(white: 0.82))
+            .fixedSize(horizontal: true, vertical: true)
+            .padding(.horizontal, marker.isNorth ? 4 : 3)
+            .padding(.vertical, 2)
+            .background(marker.isNorth ? Color.red : Color.white.opacity(0.92))
+            .cornerRadius(3)
+    }
+
+    private var calibrationSheet: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Text("Hold the phone level. Point the top edge toward north along the horizon, then calibrate.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("Azimuth") {
+                    Button("Calibrate to North") {
+                        model.calibrateToNorth()
+                    }
+                    Button("Calibrate to the Sun") {
+                        model.calibrateToSun()
+                    }
+                    .disabled(model.bodies.first(where: { $0.name == "Sun" }) == nil)
+                }
+
+                Section("Horizon") {
+                    Button("Level Horizon") {
+                        model.calibrateHorizon()
+                    }
+                }
+
+                if !model.calibrationMessage.isEmpty {
+                    Section {
+                        Text(model.calibrationMessage)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Section {
+                    Button("Reset Calibration", role: .destructive) {
+                        model.resetCalibration()
+                    }
+                }
+            }
+            .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
+            .navigationTitle("Calibration")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        showCalibrationSheet = false
+                    }
+                }
+            }
+        }
+        .modifier(SheetGlassBackgroundModifier())
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
     }
 
     private var bottomMenuBar: some View {
