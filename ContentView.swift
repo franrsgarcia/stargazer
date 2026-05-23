@@ -143,43 +143,84 @@ struct ContentView: View {
             if let selected = model.bodies.first(where: { $0.id == model.selectedBodyID }) {
                 VStack {
                     Spacer()
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack(alignment: .center) {
+                    VStack(spacing: 16) {
+                        Capsule()
+                            .fill(Color.white.opacity(0.3))
+                            .frame(width: 40, height: 5)
+                            .padding(.top, 8)
+
+                        HStack(alignment: .top, spacing: 16) {
                             Circle()
                                 .fill(selected.color)
-                                .frame(width: 36, height: 36)
-                            VStack(alignment: .leading, spacing: 2) {
+                                .frame(width: 52, height: 52)
+                                .overlay(
+                                    Text(String(selected.name.prefix(1)))
+                                        .font(.title2)
+                                        .fontWeight(.bold)
+                                        .foregroundColor(.white)
+                                )
+
+                            VStack(alignment: .leading, spacing: 6) {
                                 Text(selected.name)
-                                    .font(.headline)
-                                    .foregroundColor(.white)
-                                Text(selected.typeName)
-                                    .font(.subheadline)
-                                    .foregroundColor(.white.opacity(0.9))
-                            }
-                            Spacer()
-                            Button(action: { model.toggleSelection(of: selected) }) {
-                                Image(systemName: "xmark.circle.fill")
                                     .font(.title2)
-                                    .foregroundColor(.white.opacity(0.9))
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.white)
+                                Text(selected.descriptionText)
+                                    .font(.subheadline)
+                                    .foregroundColor(.white.opacity(0.8))
+                                    .lineLimit(2)
+                            }
+
+                            Spacer()
+
+                            Button(action: { model.toggleSelection(of: selected) }) {
+                                Image(systemName: "xmark")
+                                    .font(.title3)
+                                    .foregroundColor(.white.opacity(0.8))
+                                    .padding(10)
+                                    .background(Color.white.opacity(0.12))
+                                    .clipShape(Circle())
                             }
                         }
 
-                        Text(selected.descriptionText)
-                            .font(.caption)
-                            .foregroundColor(.white.opacity(0.9))
-
-                        Text(selected.distanceText)
-                            .font(.caption2)
-                            .foregroundColor(.white.opacity(0.95))
-                            .fontWeight(.semibold)
+                        HStack(spacing: 12) {
+                            infoTile(iconName: "arrow.up.right.circle", title: "Distance", value: selected.distanceText)
+                            infoTile(iconName: "star.fill", title: "Magnitude", value: selected.magnitudeText)
+                            infoTile(iconName: "eye", title: "Visible", value: selected.visibleUntilText)
+                        }
+                        .padding(.horizontal, 4)
                     }
-                    .padding()
-                    .background(.ultraThinMaterial)
-                    .cornerRadius(14)
-                    .padding([.horizontal, .bottom], 16)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 24)
+                    .background(Color.black.opacity(0.55))
+                    .cornerRadius(24)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 12)
                 }
                 .animation(.easeInOut, value: model.selectedBodyID)
             }
+        }
+    }
+
+    private func infoTile(iconName: String, title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: iconName)
+                    .font(.body)
+                    .foregroundColor(.white.opacity(0.85))
+                Text(title.uppercased())
+                    .font(.caption2)
+                    .foregroundColor(.white.opacity(0.75))
+            }
+            Text(value)
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundColor(.white)
+        }
+        .padding(12)
+        .background(Color.white.opacity(0.08))
+        .cornerRadius(16)
+    }
         }
     }
 }

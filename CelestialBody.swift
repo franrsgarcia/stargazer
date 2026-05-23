@@ -51,14 +51,33 @@ struct CelestialBody: Identifiable, Equatable {
     }
 
     var distanceText: String {
-        guard let au = distanceAu else { return "Distance: —" }
+        guard let au = distanceAu else { return "—" }
         let km = au * 149597870.7
         if km >= 1_000_000 {
-            return String(format: "%.2f AU (%.1fM km)", au, km / 1_000_000)
+            return String(format: "%.2f AU • %.1fM km", au, km / 1_000_000)
         } else if km >= 1000 {
-            return String(format: "%.2f AU (%.0fk km)", au, km / 1000)
+            return String(format: "%.2f AU • %.0fk km", au, km / 1000)
         } else {
-            return String(format: "%.2f AU (%.0f km)", au, km)
+            return String(format: "%.2f AU • %.0f km", au, km)
         }
     }
+
+    var magnitudeText: String {
+        switch name {
+        case "Sun": return "-26.7"
+        case "Moon": return "-12.7"
+        case "Mercury": return "-1.0"
+        case "Venus": return "-4.4"
+        case "Mars": return "-1.8"
+        case "Jupiter": return "-2.2"
+        case "Saturn": return "0.7"
+        default: return "—"
+        }
+    }
+
+    var visibleUntilText: String {
+        if altitude > 0 {
+            return "Visible now"
+        }
+        return "Below horizon"
 }
