@@ -8,8 +8,13 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            cameraLayer
-            chromeLayer
+            ARViewContainer()
+                .ignoresSafeArea()
+
+            skyOverlay
+                .ignoresSafeArea()
+
+            chromeOverlay
         }
         .sheet(isPresented: $showSearchSheet) {
             searchSheet
@@ -19,31 +24,8 @@ struct ContentView: View {
         }
     }
 
-    /// Full-screen AR feed and sky markers — never inset or constrained by chrome.
-    private var cameraLayer: some View {
-        ZStack {
-            ARViewContainer()
-                .ignoresSafeArea()
-
-            skyOverlay
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .ignoresSafeArea()
-        .background {
-            GeometryReader { proxy in
-                Color.clear
-                    .onAppear {
-                        model.viewportSize = proxy.size
-                    }
-                    .onChange(of: proxy.size) { newSize in
-                        model.viewportSize = newSize
-                    }
-            }
-        }
-    }
-
-    /// Floating controls — respects safe areas and does not affect camera layout.
-    private var chromeLayer: some View {
+    /// UI chrome — respects safe areas; does not constrain the camera layer.
+    private var chromeOverlay: some View {
         VStack(spacing: 0) {
             locationHeader
                 .padding(.horizontal, 16)

@@ -3,6 +3,61 @@ import Combine
 import RealityKit
 import ARKit
 
+/// Hosts an ARView that fills the screen edge-to-edge (aspect fill, no letterboxing).
+final class FullscreenARContainerView: UIView {
+    let arView: ARView
+    var onViewportChange: ((CGSize) -> Void)?
+
+    override init(frame: CGRect) {
+        arView = ARView(frame: frame)
+        arView.automaticallyConfigureSession = false
+        super.init(frame: frame)
+        clipsToBounds = true
+        backgroundColor = .black
+        addSubview(arView)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        arView.frame = bounds
+        applyAspectFillTransform()
+        onViewportChange?(bounds.size)
+    }
+
+    func applyAspectFillTransformIfNeeded() {
+        applyAspectFillTransform()
+    }
+
+    private func applyAspectFillTransform() {
+        guard bounds.width > 0, bounds.height > 0 else {
+            arView.layer.transform = CATransform3DIdentity
+            return
+        }
+
+        guard let frame = arView.session.currentFrame else {
+            arView.layer.transform = CATransform3DIdentity
+            return
+        }
+
+        // Camera buffer is landscape; portrait effective size swaps dimensions.
+        let imageWidth = CGFloat(frame.camera.imageResolution.height)
+        let imageHeight = CGFloat(frame.camera.imageResolution.width)
+        guard imageWidth > 0, imageHeight > 0 else {
+            arView.layer.transform = CATransform3DIdentity
+            return
+        }
+
+        let scale = max(bounds.width / imageWidth, bounds.height / imageHeight)
+        arView.layer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+        arView.layer.position = CGPoint(x: bounds.midX, y: bounds.midY)
+        arView.layer.transform = CATransform3DMakeScale(Float(scale), Float(scale), 1)
+    }
+}
+
 struct ARViewContainer: UIViewRepresentable {
     @EnvironmentObject private var model: StargazerModel
 
@@ -10,12 +65,16 @@ struct ARViewContainer: UIViewRepresentable {
         Coordinator(model: model)
     }
 
-    func makeUIView(context: Context) -> ARView {
-        let arView = ARView(frame: .zero)
-        arView.automaticallyConfigureSession = false
+    func makeUIView(context: Context) -> FullscreenARContainerView {
+        let container = FullscreenARContainerView(frame: .zero)
+        container.onViewportChange = { [weak model] size in
+            Task { @MainActor in
+                model?.viewportSize = size
+            }
+        }
 
         guard ARWorldTrackingConfiguration.isSupported else {
-            return arView
+            return container
         }
 
         let configuration = ARWorldTrackingConfiguration()
@@ -23,43 +82,43 @@ struct ARViewContainer: UIViewRepresentable {
         configuration.environmentTexturing = .none
         configuration.planeDetection = []
 
-        arView.session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
-        context.coordinator.install(on: arView)
-        return arView
+        container.arView.session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
+        context.coordinator.install(on: container)
+        return container
     }
 
-    func updateUIView(_ uiView: ARView, context: Context) {
+    func updateUIView(_ uiView: FullscreenARContainerView, context: Context) {
         if model.showCameraFeed {
-            uiView.environment.background = .cameraFeed()
+            uiView.arView.environment.background = .cameraFeed()
         } else {
-            uiView.environment.background = .color(.black)
+            uiView.arView.environment.background = .color(.black)
         }
+        uiView.applyAspectFillTransformIfNeeded()
     }
 
-    static func dismantleUIView(_ uiView: ARView, coordinator: Coordinator) {
+    static func dismantleUIView(_ uiView: FullscreenARContainerView, coordinator: Coordinator) {
         coordinator.stopObserving()
-        uiView.session.pause()
+        uiView.arView.session.pause()
     }
 
     class Coordinator: NSObject, ARSessionDelegate {
         private let model: StargazerModel
         private var subscription: Cancellable?
+        private weak var container: FullscreenARContainerView?
 
         init(model: StargazerModel) {
             self.model = model
         }
 
-        func install(on arView: ARView) {
+        func install(on container: FullscreenARContainerView) {
+            self.container = container
+            let arView = container.arView
             arView.session.delegate = self
-            subscription = arView.scene.subscribe(to: SceneEvents.Update.self) { [weak self, weak arView] _ in
-                guard let self = self, let arView = arView, let frame = arView.session.currentFrame else { return }
-                let modelSize = self.model.viewportSize
-                let viewSize: CGSize
-                if modelSize.width > 0, modelSize.height > 0 {
-                    viewSize = modelSize
-                } else {
-                    viewSize = arView.bounds.size
-                }
+            subscription = arView.scene.subscribe(to: SceneEvents.Update.self) { [weak self, weak container] _ in
+                guard let self, let container else { return }
+                guard let frame = container.arView.session.currentFrame else { return }
+                container.applyAspectFillTransformIfNeeded()
+                let viewSize = container.bounds.size
                 Task { @MainActor in
                     self.model.updateOverlays(from: frame, viewportSize: viewSize)
                 }

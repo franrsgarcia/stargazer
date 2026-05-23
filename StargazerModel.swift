@@ -60,7 +60,6 @@ final class StargazerModel: ObservableObject {
     private let geocoder = CLGeocoder()
     private var lastGeocodedCoordinate: CLLocationCoordinate2D?
     private var smoothedOverlays: [String: CGPoint] = [:]
-    private var overlayInFront: [String: Bool] = [:]
     private var searchGuidanceComplete = false
 
     private let locationManager = LocationManager()
@@ -305,16 +304,10 @@ final class StargazerModel: ObservableObject {
         return (CGPoint(x: x, y: y), cameraZ)
     }
 
-    private func isInFront(cameraZ: Float, bodyName: String) -> Bool {
-        let wasInFront = overlayInFront[bodyName] ?? false
-        let nowInFront: Bool
-        if wasInFront {
-            nowInFront = cameraZ < 0.08
-        } else {
-            nowInFront = cameraZ < -0.03
-        }
-        overlayInFront[bodyName] = nowInFront
-        return nowInFront
+    private func isInFront(cameraZ: Float, altitude: Double) -> Bool {
+        // Below-horizon directions need a looser threshold so markers remain visible when panning down.
+        let threshold: Float = altitude < 0 ? 0.2 : 0.05
+        return cameraZ < threshold
     }
 
     private func smooth(point: CGPoint, for bodyName: String, factor: CGFloat = 0.35) -> CGPoint {
@@ -466,13 +459,13 @@ final class StargazerModel: ObservableObject {
                 viewMatrix: viewMatrix,
                 projectionMatrix: projectionMatrix,
                 viewportSize: viewportSize
-            ), projection.cameraZ < 0.08 else {
+            ), projection.cameraZ < 0.2 else {
                 flush()
                 continue
             }
 
             let point = projection.point
-            let margin: CGFloat = 80
+            let margin: CGFloat = 120
             let onScreen = point.x >= -margin && point.x <= viewportSize.width + margin &&
                 point.y >= -margin && point.y <= viewportSize.height + margin
             guard onScreen else {
@@ -547,7 +540,7 @@ final class StargazerModel: ObservableObject {
                 viewMatrix: viewMatrix,
                 projectionMatrix: projectionMatrix,
                 viewportSize: viewportSize
-            ), isInFront(cameraZ: projection.cameraZ, bodyName: body.name) else {
+            ), isInFront(cameraZ: projection.cameraZ, altitude: body.altitude) else {
                 continue
             }
 
@@ -557,9 +550,7 @@ final class StargazerModel: ObservableObject {
         }
 
         for name in smoothedOverlays.keys where overlays[name] == nil {
-            if overlayInFront[name] != true {
-                smoothedOverlays.removeValue(forKey: name)
-            }
+            smoothedOverlays.removeValue(forKey: name)
         }
 
         var pastSegments: [[CGPoint]] = []
