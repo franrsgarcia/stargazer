@@ -11,7 +11,7 @@ struct ContentView: View {
             ARViewContainer()
                 .ignoresSafeArea()
 
-            skyOverlay()
+            skyOverlay
                 .ignoresSafeArea()
         }
         .safeAreaInset(edge: .top, spacing: 12) {
