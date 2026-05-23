@@ -95,10 +95,10 @@ struct ContentView: View {
                     Text("HORIZON")
                         .font(.caption2)
                         .fontWeight(.semibold)
-                        .foregroundColor(Color.white.opacity(0.9))
+                        .foregroundColor(Color.black.opacity(0.9))
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
-                        .background(Color.black.opacity(0.25))
+                        .background(Color.white.opacity(0.9))
                         .cornerRadius(10)
                         .position(x: labelPoint.x, y: labelPoint.y)
                 }
