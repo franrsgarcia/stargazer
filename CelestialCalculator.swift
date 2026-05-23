@@ -11,7 +11,8 @@ struct CelestialCalculator {
     }
 
     static func directionVector(azimuth: Double, altitude: Double) -> SIMD3<Float> {
-        let az = degreesToRadians(normalizeAngle(azimuth))
+        // ARKit gravityAndHeading uses +Z south; flip azimuth 180° to align astronomical north.
+        let az = degreesToRadians(normalizeAngle(azimuth + 180))
         let alt = degreesToRadians(altitude)
         let x = Float(cos(alt) * sin(az))
         let y = Float(sin(alt))

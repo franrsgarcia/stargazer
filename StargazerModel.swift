@@ -460,24 +460,21 @@ final class StargazerModel: ObservableObject {
         }
 
         for sample in samples {
-            guard sample.alt > -2 else {
-                flush()
-                continue
-            }
             guard let projection = project(
                 azimuth: sample.az,
                 altitude: sample.alt,
                 viewMatrix: viewMatrix,
                 projectionMatrix: projectionMatrix,
                 viewportSize: viewportSize
-            ), projection.cameraZ < -0.04 else {
+            ), projection.cameraZ < 0.08 else {
                 flush()
                 continue
             }
 
             let point = projection.point
-            let onScreen = point.x >= -40 && point.x <= viewportSize.width + 40 &&
-                point.y >= -40 && point.y <= viewportSize.height + 40
+            let margin: CGFloat = 80
+            let onScreen = point.x >= -margin && point.x <= viewportSize.width + margin &&
+                point.y >= -margin && point.y <= viewportSize.height + margin
             guard onScreen else {
                 flush()
                 continue
