@@ -73,7 +73,7 @@ struct ContentView: View {
                 }
                 .stroke(selected.color, lineWidth: 2)
 
-                ForEach(Array(model.trajectoryPoints.enumerated()), id: \.(offset)) { idx, p in
+                ForEach(Array(model.trajectoryPoints.enumerated()), id: \.offset) { idx, p in
                     Circle()
                         .fill(selected.color.opacity(0.9))
                         .frame(width: 6, height: 6)
