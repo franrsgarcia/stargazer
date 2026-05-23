@@ -6,14 +6,16 @@ import CoreLocation
 final class StargazerModel: ObservableObject {
     @Published var bodies: [CelestialBody] = []
     @Published var bodyOverlays: [UUID: CGPoint] = [:]
-    @Published var trajectoryPoints: [CGPoint] = []
+    @Published var pastTrajectoryPoints: [CGPoint] = []
+    @Published var futureTrajectoryPoints: [CGPoint] = []
     @Published var horizonPoints: [CGPoint] = []
     @Published var showHorizon: Bool = true
     @Published var statusText = "Stargazer"
     @Published var summaryText = "Point your device at the sky to see planets and the moon."
 
     @Published private(set) var selectedBodyID: UUID?
-    private var selectedTrajectoryAngles: [(az: Double, alt: Double)] = []
+    @Published private(set) var selectedBodyName: String?
+    private var selectedTrajectorySamples: [(az: Double, alt: Double, isFuture: Bool)] = []
 
     private let locationManager = LocationManager()
     private var currentLocation: CLLocation?
@@ -42,20 +44,32 @@ final class StargazerModel: ObservableObject {
         bodies = CelestialCalculator.bodies(at: date, location: location.coordinate)
         summaryText = String(format: "%.0f° N, %.0f° E • %@", location.coordinate.latitude, location.coordinate.longitude, DateFormatter.localizedString(from: date, dateStyle: .none, timeStyle: .short))
         statusText = "Sky model updated"
+
+        if let selectedName = selectedBodyName {
+            if let matching = bodies.first(where: { $0.name == selectedName }) {
+                selectedBodyID = matching.id
+            }
+            selectedTrajectorySamples = CelestialCalculator.sampleTrajectory(name: selectedName, centerDate: date, location: location.coordinate, spanMinutes: 360, stepMinutes: 3)
+        }
     }
 
     func toggleSelection(of body: CelestialBody) {
         if selectedBodyID == body.id {
             selectedBodyID = nil
-            selectedTrajectoryAngles = []
-            DispatchQueue.main.async { self.trajectoryPoints = [] }
+            selectedBodyName = nil
+            selectedTrajectorySamples = []
+            DispatchQueue.main.async {
+                self.pastTrajectoryPoints = []
+                self.futureTrajectoryPoints = []
+            }
             return
         }
 
         selectedBodyID = body.id
+        selectedBodyName = body.name
         guard let location = currentLocation else { return }
         // Sample the trajectory ±3 hours with 3-minute steps
-        selectedTrajectoryAngles = CelestialCalculator.samplePositions(name: body.name, centerDate: Date(), location: location.coordinate, spanMinutes: 360, stepMinutes: 3)
+        selectedTrajectorySamples = CelestialCalculator.sampleTrajectory(name: body.name, centerDate: Date(), location: location.coordinate, spanMinutes: 360, stepMinutes: 3)
     }
 
     func updateOverlays(from frame: ARFrame, viewportSize: CGSize) {
@@ -76,10 +90,11 @@ final class StargazerModel: ObservableObject {
             overlays[body.id] = CGPoint(x: x, y: y)
         }
 
-        var trajPoints: [CGPoint] = []
-        if let _ = selectedBodyID, !selectedTrajectoryAngles.isEmpty {
-            for ang in selectedTrajectoryAngles {
-                let dir = CelestialCalculator.directionVector(azimuth: ang.az, altitude: ang.alt)
+        var pastPoints: [CGPoint] = []
+        var futurePoints: [CGPoint] = []
+        if let _ = selectedBodyID, !selectedTrajectorySamples.isEmpty {
+            for sample in selectedTrajectorySamples {
+                let dir = CelestialCalculator.directionVector(azimuth: sample.az, altitude: sample.alt)
                 let cameraPoint = viewMatrix * SIMD4<Float>(dir, 0)
                 guard cameraPoint.z < 0 else { continue }
                 let clip = projectionMatrix * SIMD4<Float>(cameraPoint.x, cameraPoint.y, cameraPoint.z, 1)
@@ -87,7 +102,12 @@ final class StargazerModel: ObservableObject {
                 let ndc = clip / clip.w
                 let x = CGFloat((ndc.x + 1) / 2) * viewportSize.width
                 let y = CGFloat((1 - ndc.y) / 2) * viewportSize.height
-                trajPoints.append(CGPoint(x: x, y: y))
+                let point = CGPoint(x: x, y: y)
+                if sample.isFuture {
+                    futurePoints.append(point)
+                } else {
+                    pastPoints.append(point)
+                }
             }
         }
 
@@ -107,7 +127,8 @@ final class StargazerModel: ObservableObject {
 
         DispatchQueue.main.async {
             self.bodyOverlays = overlays
-            self.trajectoryPoints = trajPoints
+            self.pastTrajectoryPoints = pastPoints
+            self.futureTrajectoryPoints = futurePoints
             self.horizonPoints = horizonPts
         }
     }

@@ -65,16 +65,28 @@ struct ContentView: View {
                 }
             }
 
-            if !model.trajectoryPoints.isEmpty, let selected = model.bodies.first(where: { $0.id == model.selectedBodyID }) {
-                Path { path in
-                    let pts = model.trajectoryPoints
-                    guard pts.count > 1 else { return }
-                    path.move(to: pts[0])
-                    for p in pts.dropFirst() { path.addLine(to: p) }
+            if let selected = model.bodies.first(where: { $0.id == model.selectedBodyID }) {
+                if !model.pastTrajectoryPoints.isEmpty {
+                    Path { path in
+                        let pts = model.pastTrajectoryPoints
+                        guard pts.count > 1 else { return }
+                        path.move(to: pts[0])
+                        for p in pts.dropFirst() { path.addLine(to: p) }
+                    }
+                    .stroke(selected.color.opacity(0.35), lineWidth: 1)
                 }
-                .stroke(selected.color, lineWidth: 2)
 
-                ForEach(Array(model.trajectoryPoints.enumerated()), id: \.offset) { idx, p in
+                if !model.futureTrajectoryPoints.isEmpty {
+                    Path { path in
+                        let pts = model.futureTrajectoryPoints
+                        guard pts.count > 1 else { return }
+                        path.move(to: pts[0])
+                        for p in pts.dropFirst() { path.addLine(to: p) }
+                    }
+                    .stroke(selected.color, lineWidth: 2)
+                }
+
+                ForEach(Array(model.futureTrajectoryPoints.enumerated()), id: \.offset) { idx, p in
                     Circle()
                         .fill(selected.color.opacity(0.9))
                         .frame(width: 6, height: 6)
