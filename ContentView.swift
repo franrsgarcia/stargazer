@@ -3,6 +3,13 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject private var model: StargazerModel
 
+    private func segmentOpacity(index: Int, totalCount: Int, baseOpacity: Double = 1.0) -> Double {
+        let progress = Double(index) / Double(totalCount)
+        let fadeInOpacity = progress < 0.2 ? progress / 0.2 : 1.0
+        let fadeOutOpacity = (1.0 - progress) < 0.2 ? (1.0 - progress) / 0.2 : 1.0
+        return min(fadeInOpacity, fadeOutOpacity) * baseOpacity
+    }
+
     // Produce a smooth path from a series of points using quadratic segments
     private func smoothPath(from pts: [CGPoint]) -> Path {
         var path = Path()
@@ -73,10 +80,7 @@ struct ContentView: View {
                         ForEach(0..<(pts.count - 1), id: \.self) { i in
                             let start = pts[i]
                             let end = pts[i + 1]
-                            let progress = Double(i) / Double(pts.count)
-                            let fadeInOpacity = progress < 0.2 ? progress / 0.2 : 1.0
-                            let fadeOutOpacity = (1.0 - progress) < 0.2 ? (1.0 - progress) / 0.2 : 1.0
-                            let opacity = min(fadeInOpacity, fadeOutOpacity) * 0.35
+                            let opacity = segmentOpacity(index: i, totalCount: pts.count, baseOpacity: 0.35)
                             
                             Path { path in
                                 path.move(to: start)
@@ -94,10 +98,7 @@ struct ContentView: View {
                         ForEach(0..<(pts.count - 1), id: \.self) { i in
                             let start = pts[i]
                             let end = pts[i + 1]
-                            let progress = Double(i) / Double(pts.count)
-                            let fadeInOpacity = progress < 0.2 ? progress / 0.2 : 1.0
-                            let fadeOutOpacity = (1.0 - progress) < 0.2 ? (1.0 - progress) / 0.2 : 1.0
-                            let opacity = min(fadeInOpacity, fadeOutOpacity)
+                            let opacity = segmentOpacity(index: i, totalCount: pts.count, baseOpacity: 1.0)
                             
                             Path { path in
                                 path.move(to: start)
