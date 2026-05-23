@@ -19,8 +19,7 @@ struct CelestialBody: Identifiable, Equatable {
     }
 
     var displayLabel: String {
-        let altitudeText = String(format: "%.0f°", altitude)
-        return "\(name) · \(altitudeText)"
+        name
     }
 
     var typeName: String {

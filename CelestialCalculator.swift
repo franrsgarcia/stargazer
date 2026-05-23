@@ -233,15 +233,15 @@ struct CelestialCalculator {
     }
 
     // Sample temporal trajectory positions for a named body across a time span centered on centerDate.
-    static func sampleTrajectory(name: String, centerDate: Date, location: CLLocationCoordinate2D, spanMinutes: Int = 360, stepMinutes: Int = 5) -> [(az: Double, alt: Double, isFuture: Bool)] {
-        var results: [(az: Double, alt: Double, isFuture: Bool)] = []
+    static func sampleTrajectory(name: String, centerDate: Date, location: CLLocationCoordinate2D, spanMinutes: Int = 360, stepMinutes: Int = 5) -> [(date: Date, az: Double, alt: Double, isFuture: Bool)] {
+        var results: [(date: Date, az: Double, alt: Double, isFuture: Bool)] = []
         let half = spanMinutes / 2
         var t = -half
         while t <= half {
             let date = centerDate.addingTimeInterval(TimeInterval(t * 60))
             let bodies = bodies(at: date, location: location)
             if let body = bodies.first(where: { $0.name == name }) {
-                results.append((az: body.azimuth, alt: body.altitude, isFuture: t >= 0))
+                results.append((date: date, az: body.azimuth, alt: body.altitude, isFuture: t >= 0))
             }
             t += stepMinutes
         }

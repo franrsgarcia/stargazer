@@ -15,7 +15,9 @@ final class StargazerModel: ObservableObject {
 
     @Published private(set) var selectedBodyID: UUID?
     @Published private(set) var selectedBodyName: String?
-    private var selectedTrajectorySamples: [(az: Double, alt: Double, isFuture: Bool)] = []
+    @Published var selectedRiseText: String?
+    @Published var selectedSetText: String?
+    private var selectedTrajectorySamples: [(date: Date, az: Double, alt: Double, isFuture: Bool)] = []
 
     private let locationManager = LocationManager()
     private var currentLocation: CLLocation?
@@ -49,7 +51,8 @@ final class StargazerModel: ObservableObject {
             if let matching = bodies.first(where: { $0.name == selectedName }) {
                 selectedBodyID = matching.id
             }
-            selectedTrajectorySamples = CelestialCalculator.sampleTrajectory(name: selectedName, centerDate: date, location: location.coordinate, spanMinutes: 360, stepMinutes: 3)
+            selectedTrajectorySamples = CelestialCalculator.sampleTrajectory(name: selectedName, centerDate: date, location: location.coordinate, spanMinutes: 1440, stepMinutes: 5)
+            computeRiseSetTimes(name: selectedName, location: location.coordinate, centerDate: date)
         }
     }
 
@@ -57,6 +60,8 @@ final class StargazerModel: ObservableObject {
         if selectedBodyID == body.id {
             selectedBodyID = nil
             selectedBodyName = nil
+            selectedRiseText = nil
+            selectedSetText = nil
             selectedTrajectorySamples = []
             DispatchQueue.main.async {
                 self.pastTrajectoryPoints = []
@@ -68,8 +73,36 @@ final class StargazerModel: ObservableObject {
         selectedBodyID = body.id
         selectedBodyName = body.name
         guard let location = currentLocation else { return }
-        // Sample the trajectory ±3 hours with 3-minute steps
-        selectedTrajectorySamples = CelestialCalculator.sampleTrajectory(name: body.name, centerDate: Date(), location: location.coordinate, spanMinutes: 360, stepMinutes: 3)
+        // Sample the trajectory over the next 24 hours with 5-minute steps
+        selectedTrajectorySamples = CelestialCalculator.sampleTrajectory(name: body.name, centerDate: Date(), location: location.coordinate, spanMinutes: 1440, stepMinutes: 5)
+        selectedRiseText = nil
+        selectedSetText = nil
+        computeRiseSetTimes(name: body.name, location: location.coordinate, centerDate: Date())
+    }
+
+    private func computeRiseSetTimes(name: String, location: CLLocationCoordinate2D, centerDate: Date) {
+        let samples = CelestialCalculator.sampleTrajectory(name: name, centerDate: centerDate, location: location, spanMinutes: 1440, stepMinutes: 5)
+        var nextRise: Date?
+        var nextSet: Date?
+
+        for i in 1..<samples.count {
+            let previous = samples[i - 1]
+            let current = samples[i]
+
+            if nextRise == nil, previous.alt <= 0, current.alt > 0 {
+                nextRise = current.date
+            }
+            if nextSet == nil, previous.alt > 0, current.alt <= 0 {
+                nextSet = current.date
+            }
+
+            if nextRise != nil, nextSet != nil {
+                break
+            }
+        }
+
+        selectedRiseText = nextRise.map { DateFormatter.localizedString(from: $0, dateStyle: .short, timeStyle: .short) } ?? "Unknown"
+        selectedSetText = nextSet.map { DateFormatter.localizedString(from: $0, dateStyle: .short, timeStyle: .short) } ?? "Unknown"
     }
 
     func updateOverlays(from frame: ARFrame, viewportSize: CGSize) {

@@ -165,10 +165,10 @@ struct ContentView: View {
                 
                 Text("HORIZON")
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(.white)
+                    .foregroundColor(Color(white: 0.95))
                     .padding(.horizontal, 4)
                     .padding(.vertical, 2)
-                    .background(Color.white.opacity(0.12))
+                    .background(Color.white)
                     .cornerRadius(4)
                     .rotationEffect(.radians(angle))
                     .position(x: screenCenterX, y: labelY)
@@ -212,20 +212,20 @@ struct ContentView: View {
                                         .foregroundColor(.white)
                                 )
 
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(selected.name)
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundColor(.white)
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.7)
-                                Text(selected.descriptionText)
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.white.opacity(0.8))
-                                    .lineLimit(2)
-                                    .minimumScaleFactor(0.7)
-                            }
+                            Text(selected.name)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.white)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
 
                             Spacer()
+
+                            Button(action: { /* info page navigation placeholder */ }) {
+                                Image(systemName: "info.circle")
+                                    .font(.body)
+                                    .foregroundColor(.white.opacity(0.9))
+                                    .padding(8)
+                            }
 
                             Button(action: { model.toggleSelection(of: selected) }) {
                                 Image(systemName: "xmark")
@@ -238,8 +238,8 @@ struct ContentView: View {
                         }
 
                         HStack(spacing: 10) {
-                            infoTile(iconName: "arrow.up.right.circle", title: "Distance", value: selected.distanceText)
-                            infoTile(iconName: "eye", title: "Visible", value: selected.visibleUntilText)
+                            infoTile(iconName: "sunrise.fill", title: "Rise", value: model.selectedRiseText ?? "—")
+                            infoTile(iconName: "sunset.fill", title: "Set", value: model.selectedSetText ?? "—")
                         }
                         .padding(.horizontal, 2)
                     }
