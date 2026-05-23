@@ -3,6 +3,29 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject private var model: StargazerModel
 
+    private func horizonLabelYPosition(for points: [CGPoint]) -> CGFloat {
+        let screenCenterX = UIScreen.main.bounds.midX
+        let defaultY = UIScreen.main.bounds.midY
+        
+        guard let minX = points.map(\.x).min(), let maxX = points.map(\.x).max() else {
+            return defaultY
+        }
+        
+        guard screenCenterX >= minX && screenCenterX <= maxX else {
+            return defaultY
+        }
+        
+        // Find the segment that contains screenCenterX
+        for i in 0..<(points.count - 1) {
+            if points[i].x <= screenCenterX && screenCenterX <= points[i + 1].x {
+                let t = (screenCenterX - points[i].x) / (points[i + 1].x - points[i].x)
+                return points[i].y + t * (points[i + 1].y - points[i].y)
+            }
+        }
+        
+        return defaultY
+    }
+
     private func segmentOpacity(index: Int, totalCount: Int, baseOpacity: Double = 1.0) -> Double {
         let progress = Double(index) / Double(totalCount)
         let fadeInOpacity = progress < 0.2 ? progress / 0.2 : 1.0
@@ -123,21 +146,7 @@ struct ContentView: View {
 
                 // Horizon label: centered horizontally, moves vertically with the horizon line
                 let screenCenterX = UIScreen.main.bounds.midX
-                var labelY: CGFloat = UIScreen.main.bounds.midY
-                
-                // Find the y position at the screen's horizontal center by interpolating horizon points
-                if let minX = pts.map(\.x).min(), let maxX = pts.map(\.x).max() {
-                    if screenCenterX >= minX && screenCenterX <= maxX {
-                        // Interpolate to find y at screenCenterX
-                        for i in 0..<(pts.count - 1) {
-                            if pts[i].x <= screenCenterX && screenCenterX <= pts[i + 1].x {
-                                let t = (screenCenterX - pts[i].x) / (pts[i + 1].x - pts[i].x)
-                                labelY = pts[i].y + t * (pts[i + 1].y - pts[i].y)
-                                break
-                            }
-                        }
-                    }
-                }
+                let labelY = horizonLabelYPosition(for: pts)
                 
                 Text("HORIZON")
                     .font(.caption)
