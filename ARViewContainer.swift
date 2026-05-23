@@ -93,16 +93,13 @@ struct ARViewContainer: UIViewRepresentable {
 
         container.arView.session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
         context.coordinator.install(on: container)
-        context.coordinator.lastCompassResetToken = model.compassResetToken
+        context.coordinator.noteInitialCompassResetToken(model.compassResetToken)
         return container
     }
 
     func updateUIView(_ uiView: FullscreenARContainerView, context: Context) {
         uiView.setShowsCameraFeed(model.showCameraFeed)
-        if context.coordinator.lastCompassResetToken != model.compassResetToken {
-            context.coordinator.lastCompassResetToken = model.compassResetToken
-            context.coordinator.resetARSession(on: uiView)
-        }
+        context.coordinator.handleCompassResetIfNeeded(on: uiView, token: model.compassResetToken)
         uiView.setNeedsLayout()
     }
 
@@ -141,6 +138,16 @@ struct ARViewContainer: UIViewRepresentable {
         func stopObserving() {
             subscription?.cancel()
             subscription = nil
+        }
+
+        func noteInitialCompassResetToken(_ token: UUID) {
+            lastCompassResetToken = token
+        }
+
+        func handleCompassResetIfNeeded(on container: FullscreenARContainerView, token: UUID) {
+            guard lastCompassResetToken != token else { return }
+            lastCompassResetToken = token
+            resetARSession(on: container)
         }
 
         func resetARSession(on container: FullscreenARContainerView) {
