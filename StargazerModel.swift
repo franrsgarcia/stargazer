@@ -67,6 +67,8 @@ final class StargazerModel: ObservableObject {
     private var smoothedOverlays: [String: CGPoint] = [:]
     private var searchGuidanceComplete = false
     private var lockedCoarseTurn: CoarseTurnDirection?
+    private var smoothedSearchArrowPoint: CGPoint?
+    private var smoothedSearchArrowAngle: Double?
     private var lastProjectionViewport: CGSize = .zero
     private var lastScreenOffset: CGPoint = .zero
 
@@ -219,6 +221,8 @@ final class StargazerModel: ObservableObject {
         searchGuidanceComplete = false
         searchInfoRevealed = false
         lockedCoarseTurn = nil
+        smoothedSearchArrowPoint = nil
+        smoothedSearchArrowAngle = nil
         searchArrow = SearchArrowState()
     }
 
@@ -287,8 +291,11 @@ final class StargazerModel: ObservableObject {
     }
 
     /// Degrees off-target before we show a simple turn-left/right hint.
-    private static let fineGuidanceThresholdDegrees = 45.0
-    private static let coarseUnlockThresholdDegrees = 35.0
+    private static let fineGuidanceThresholdDegrees = 80.0
+    private static let coarseUnlockThresholdDegrees = 60.0
+    private static let searchArrowSmoothingFactor: CGFloat = 0.26
+    /// Treat targets slightly off-screen as close enough to point at directly.
+    private static let searchOnScreenExpansion: CGFloat = 88
 
     private func compassRelativeBearingDegrees(to body: CelestialBody) -> Double? {
         guard let heading = currentHeading,
@@ -319,7 +326,8 @@ final class StargazerModel: ObservableObject {
     private func edgeGuidancePlacement(
         toward target: CGPoint,
         in size: CGSize,
-        margin: CGFloat = 44
+        margin: CGFloat = 44,
+        pointAtTarget: Bool = false
     ) -> (point: CGPoint, angle: Double) {
         let cx = size.width / 2
         let cy = size.height / 2
@@ -328,7 +336,8 @@ final class StargazerModel: ObservableObject {
 
         if abs(dx) < 0.001 && abs(dy) < 0.001 {
             let point = CGPoint(x: cx, y: margin)
-            return (point, -.pi / 2)
+            let angle = pointAtTarget ? atan2(target.y - point.y, target.x - point.x) : -.pi / 2
+            return (point, angle)
         }
 
         let halfW = max(size.width / 2 - margin, 1)
@@ -337,6 +346,10 @@ final class StargazerModel: ObservableObject {
         let scaleY = dy != 0 ? abs(halfH / dy) : .infinity
         let scale = min(scaleX, scaleY)
         let edgePoint = CGPoint(x: cx + dx * scale, y: cy + dy * scale)
+        if pointAtTarget {
+            let angle = atan2(target.y - edgePoint.y, target.x - edgePoint.x)
+            return (edgePoint, angle)
+        }
         let outward = atan2(edgePoint.y - cy, edgePoint.x - cx)
         return (edgePoint, outward)
     }
@@ -353,7 +366,7 @@ final class StargazerModel: ObservableObject {
             x: cx + CGFloat(sin(radians)) * 1000,
             y: cy + CGFloat(-cos(radians)) * 1000
         )
-        return edgeGuidancePlacement(toward: syntheticTarget, in: size, margin: margin)
+        return edgeGuidancePlacement(toward: syntheticTarget, in: size, margin: margin, pointAtTarget: true)
     }
 
     private func coarseTurnPlacement(
@@ -438,6 +451,32 @@ final class StargazerModel: ObservableObject {
         return (point, angle)
     }
 
+    private func smoothSearchArrowPlacement(
+        _ target: (point: CGPoint, angle: Double)
+    ) -> (point: CGPoint, angle: Double) {
+        guard let previousPoint = smoothedSearchArrowPoint,
+              let previousAngle = smoothedSearchArrowAngle else {
+            smoothedSearchArrowPoint = target.point
+            smoothedSearchArrowAngle = target.angle
+            return target
+        }
+
+        let factor = Self.searchArrowSmoothingFactor
+        let point = CGPoint(
+            x: previousPoint.x + (target.point.x - previousPoint.x) * factor,
+            y: previousPoint.y + (target.point.y - previousPoint.y) * factor
+        )
+
+        var delta = target.angle - previousAngle
+        while delta > .pi { delta -= 2 * .pi }
+        while delta < -.pi { delta += 2 * .pi }
+        let angle = previousAngle + delta * Double(factor)
+
+        smoothedSearchArrowPoint = point
+        smoothedSearchArrowAngle = angle
+        return (point, angle)
+    }
+
     func updateSearchGuidance() {
         guard selectionSource == .search, !searchGuidanceComplete else { return }
         guard let bodyName = selectedBodyName,
@@ -447,52 +486,55 @@ final class StargazerModel: ObservableObject {
         let size = viewportSize
         let centerX = size.width / 2
         let centerY = size.height / 2
-        let arrivalThreshold = min(size.width, size.height) * 0.14
+        let center = CGPoint(x: centerX, y: centerY)
+        let arrivalThreshold = min(size.width, size.height) * 0.16
 
-        if let target = bodyOverlays[bodyName], isOnScreen(target, in: size) {
+        let rawPlacement: (point: CGPoint, angle: Double)
+        let rawMode: SearchArrowMode
+        var shouldComplete = false
+
+        if let target = bodyOverlays[bodyName],
+           isOnScreen(target, in: size, margin: -Self.searchOnScreenExpansion) {
             lockedCoarseTurn = nil
             let distance = hypot(target.x - centerX, target.y - centerY)
-            let placement = offsetArrowPlacement(
+            rawPlacement = offsetArrowPlacement(
                 pointingTo: target,
-                approachFrom: CGPoint(x: centerX, y: centerY),
+                approachFrom: center,
                 clearance: markerClearance(for: body)
             )
-            searchArrow.isVisible = true
-            searchArrow.position = placement.point
-            searchArrow.angle = placement.angle
-            searchArrow.mode = .onBody
-
+            rawMode = .onBody
             if distance < arrivalThreshold {
-                searchGuidanceComplete = true
-                searchInfoRevealed = true
-                searchArrow.isVisible = false
-            }
-            return
-        }
-
-        searchArrow.mode = .edge
-
-        let placement: (point: CGPoint, angle: Double)
-        if let relativeDegrees = compassRelativeBearingDegrees(to: body) {
-            if let coarseTurn = resolveCoarseTurn(relativeDegrees: relativeDegrees) {
-                lockedCoarseTurn = coarseTurn
-                placement = coarseTurnPlacement(coarseTurn, in: size)
-            } else {
-                lockedCoarseTurn = nil
-                if let target = bodyOverlays[bodyName] {
-                    placement = edgeGuidancePlacement(toward: target, in: size)
-                } else {
-                    placement = fineGuidancePlacement(relativeDegrees: relativeDegrees, in: size)
-                }
+                shouldComplete = true
             }
         } else {
-            searchArrow.isVisible = false
-            return
+            rawMode = .edge
+            if let target = bodyOverlays[bodyName] {
+                lockedCoarseTurn = nil
+                rawPlacement = edgeGuidancePlacement(toward: target, in: size, pointAtTarget: true)
+            } else if let relativeDegrees = compassRelativeBearingDegrees(to: body) {
+                if let coarseTurn = resolveCoarseTurn(relativeDegrees: relativeDegrees) {
+                    lockedCoarseTurn = coarseTurn
+                    rawPlacement = coarseTurnPlacement(coarseTurn, in: size)
+                } else {
+                    lockedCoarseTurn = nil
+                    rawPlacement = fineGuidancePlacement(relativeDegrees: relativeDegrees, in: size)
+                }
+            } else {
+                searchArrow.isVisible = false
+                return
+            }
         }
 
-        searchArrow.isVisible = true
+        let placement = smoothSearchArrowPlacement(rawPlacement)
+        searchArrow.isVisible = !shouldComplete
         searchArrow.position = placement.point
         searchArrow.angle = placement.angle
+        searchArrow.mode = rawMode
+
+        if shouldComplete {
+            searchGuidanceComplete = true
+            searchInfoRevealed = true
+        }
     }
 
     private var lastViewMatrix: simd_float4x4 = matrix_identity_float4x4
