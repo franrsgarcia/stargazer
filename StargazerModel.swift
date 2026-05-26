@@ -33,7 +33,6 @@ struct CardinalMarker: Identifiable {
 private enum CoarseTurnDirection {
     case left
     case right
-    case around
 }
 
 @MainActor
@@ -287,9 +286,8 @@ final class StargazerModel: ObservableObject {
         return nil
     }
 
-    /// Degrees off-target before we show a simple turn-left/right/around hint.
+    /// Degrees off-target before we show a simple turn-left/right hint.
     private static let fineGuidanceThresholdDegrees = 45.0
-    private static let turnAroundThresholdDegrees = 130.0
     private static let coarseUnlockThresholdDegrees = 35.0
 
     private func compassRelativeBearingDegrees(to body: CelestialBody) -> Double? {
@@ -306,10 +304,6 @@ final class StargazerModel: ObservableObject {
 
     private func resolveCoarseTurn(relativeDegrees: Double) -> CoarseTurnDirection? {
         let absRelative = abs(relativeDegrees)
-
-        if absRelative >= Self.turnAroundThresholdDegrees {
-            return .around
-        }
 
         if absRelative >= Self.fineGuidanceThresholdDegrees {
             return relativeDegrees > 0 ? .right : .left
@@ -367,7 +361,6 @@ final class StargazerModel: ObservableObject {
         in size: CGSize,
         margin: CGFloat = 48
     ) -> (point: CGPoint, angle: Double) {
-        let cx = size.width / 2
         let cy = size.height / 2
 
         switch turn {
@@ -377,9 +370,6 @@ final class StargazerModel: ObservableObject {
         case .right:
             let point = CGPoint(x: size.width - margin, y: cy)
             return (point, 0)
-        case .around:
-            let point = CGPoint(x: cx, y: size.height - margin)
-            return (point, .pi / 2)
         }
     }
 
@@ -483,15 +473,17 @@ final class StargazerModel: ObservableObject {
         searchArrow.mode = .edge
 
         let placement: (point: CGPoint, angle: Double)
-        if let target = bodyOverlays[bodyName] {
-            placement = edgeGuidancePlacement(toward: target, in: size)
-        } else if let relativeDegrees = compassRelativeBearingDegrees(to: body) {
+        if let relativeDegrees = compassRelativeBearingDegrees(to: body) {
             if let coarseTurn = resolveCoarseTurn(relativeDegrees: relativeDegrees) {
                 lockedCoarseTurn = coarseTurn
                 placement = coarseTurnPlacement(coarseTurn, in: size)
             } else {
                 lockedCoarseTurn = nil
-                placement = fineGuidancePlacement(relativeDegrees: relativeDegrees, in: size)
+                if let target = bodyOverlays[bodyName] {
+                    placement = edgeGuidancePlacement(toward: target, in: size)
+                } else {
+                    placement = fineGuidancePlacement(relativeDegrees: relativeDegrees, in: size)
+                }
             }
         } else {
             searchArrow.isVisible = false
