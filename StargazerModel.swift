@@ -322,16 +322,20 @@ final class StargazerModel: ObservableObject {
         return nil
     }
 
-    private func fineGuidancePlacement(
-        relativeDegrees: Double,
+    private func edgeGuidancePlacement(
+        toward target: CGPoint,
         in size: CGSize,
         margin: CGFloat = 44
     ) -> (point: CGPoint, angle: Double) {
-        let radians = relativeDegrees * .pi / 180
-        let dx = CGFloat(sin(radians))
-        let dy = CGFloat(-cos(radians))
         let cx = size.width / 2
         let cy = size.height / 2
+        let dx = target.x - cx
+        let dy = target.y - cy
+
+        if abs(dx) < 0.001 && abs(dy) < 0.001 {
+            let point = CGPoint(x: cx, y: margin)
+            return (point, -.pi / 2)
+        }
 
         let halfW = max(size.width / 2 - margin, 1)
         let halfH = max(size.height / 2 - margin, 1)
@@ -339,7 +343,23 @@ final class StargazerModel: ObservableObject {
         let scaleY = dy != 0 ? abs(halfH / dy) : .infinity
         let scale = min(scaleX, scaleY)
         let edgePoint = CGPoint(x: cx + dx * scale, y: cy + dy * scale)
-        return (edgePoint, atan2(dy, dx))
+        let outward = atan2(edgePoint.y - cy, edgePoint.x - cx)
+        return (edgePoint, outward)
+    }
+
+    private func fineGuidancePlacement(
+        relativeDegrees: Double,
+        in size: CGSize,
+        margin: CGFloat = 44
+    ) -> (point: CGPoint, angle: Double) {
+        let radians = relativeDegrees * .pi / 180
+        let cx = size.width / 2
+        let cy = size.height / 2
+        let syntheticTarget = CGPoint(
+            x: cx + CGFloat(sin(radians)) * 1000,
+            y: cy + CGFloat(-cos(radians)) * 1000
+        )
+        return edgeGuidancePlacement(toward: syntheticTarget, in: size, margin: margin)
     }
 
     private func coarseTurnPlacement(
@@ -352,11 +372,14 @@ final class StargazerModel: ObservableObject {
 
         switch turn {
         case .left:
-            return (CGPoint(x: margin, y: cy), 0)
+            let point = CGPoint(x: margin, y: cy)
+            return (point, .pi)
         case .right:
-            return (CGPoint(x: size.width - margin, y: cy), .pi)
+            let point = CGPoint(x: size.width - margin, y: cy)
+            return (point, 0)
         case .around:
-            return (CGPoint(x: cx, y: size.height - margin), -.pi / 2)
+            let point = CGPoint(x: cx, y: size.height - margin)
+            return (point, .pi / 2)
         }
     }
 
@@ -425,27 +448,6 @@ final class StargazerModel: ObservableObject {
         return (point, angle)
     }
 
-    private func edgePlacement(toward target: CGPoint, in size: CGSize, margin: CGFloat = 44) -> (point: CGPoint, angle: Double) {
-        let cx = size.width / 2
-        let cy = size.height / 2
-        let dx = target.x - cx
-        let dy = target.y - cy
-
-        if dx == 0 && dy == 0 {
-            let point = CGPoint(x: cx, y: margin)
-            return (point, atan2(target.y - point.y, target.x - point.x))
-        }
-
-        let halfW = max(size.width / 2 - margin, 1)
-        let halfH = max(size.height / 2 - margin, 1)
-        let scaleX = dx != 0 ? abs(halfW / dx) : .infinity
-        let scaleY = dy != 0 ? abs(halfH / dy) : .infinity
-        let scale = min(scaleX, scaleY)
-        let edgePoint = CGPoint(x: cx + dx * scale, y: cy + dy * scale)
-        let angle = atan2(target.y - edgePoint.y, target.x - edgePoint.x)
-        return (edgePoint, angle)
-    }
-
     func updateSearchGuidance() {
         guard selectionSource == .search, !searchGuidanceComplete else { return }
         guard let bodyName = selectedBodyName,
@@ -478,20 +480,22 @@ final class StargazerModel: ObservableObject {
             return
         }
 
-        guard let relativeDegrees = compassRelativeBearingDegrees(to: body) else {
-            searchArrow.isVisible = false
-            return
-        }
+        searchArrow.mode = .edge
 
         let placement: (point: CGPoint, angle: Double)
-        if let coarseTurn = resolveCoarseTurn(relativeDegrees: relativeDegrees) {
-            lockedCoarseTurn = coarseTurn
-            placement = coarseTurnPlacement(coarseTurn, in: size)
-            searchArrow.mode = .edge
+        if let target = bodyOverlays[bodyName] {
+            placement = edgeGuidancePlacement(toward: target, in: size)
+        } else if let relativeDegrees = compassRelativeBearingDegrees(to: body) {
+            if let coarseTurn = resolveCoarseTurn(relativeDegrees: relativeDegrees) {
+                lockedCoarseTurn = coarseTurn
+                placement = coarseTurnPlacement(coarseTurn, in: size)
+            } else {
+                lockedCoarseTurn = nil
+                placement = fineGuidancePlacement(relativeDegrees: relativeDegrees, in: size)
+            }
         } else {
-            lockedCoarseTurn = nil
-            placement = fineGuidancePlacement(relativeDegrees: relativeDegrees, in: size)
-            searchArrow.mode = .edge
+            searchArrow.isVisible = false
+            return
         }
 
         searchArrow.isVisible = true
