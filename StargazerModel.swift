@@ -67,6 +67,7 @@ final class StargazerModel: ObservableObject {
     private var shouldLatchCompassOffset = false
     private var lastProjectionViewport: CGSize = .zero
     private var lastScreenOffset: CGPoint = .zero
+    private var lastCameraHeading: Float = 0
 
     private let locationManager = LocationManager()
     private var currentLocation: CLLocation?
@@ -290,52 +291,63 @@ final class StargazerModel: ObservableObject {
         return direction
     }
 
-    private func cameraSpaceGuidanceHint(cameraPoint: SIMD3<Float>, viewportSize: CGSize) -> CGPoint {
+    private func normalizeAngleRadians(_ radians: Float) -> Float {
+        var angle = radians
+        while angle > .pi { angle -= 2 * .pi }
+        while angle < -.pi { angle += 2 * .pi }
+        return angle
+    }
+
+    private func geographicCameraHeadingRadians() -> Float {
+        lastCameraHeading + compassYawOffset
+    }
+
+    private func relativeHorizontalBearing(to body: CelestialBody) -> Float {
+        let bodyAzimuth = Float(body.azimuth * .pi / 180)
+        return normalizeAngleRadians(bodyAzimuth - geographicCameraHeadingRadians())
+    }
+
+    /// Screen hint from horizontal bearing: 0° ahead, +° right, ±180° behind.
+    private func horizontalBearingHint(relativeBearing: Float, viewportSize: CGSize) -> CGPoint {
         let centerX = viewportSize.width / 2
         let centerY = viewportSize.height / 2
         let scale: CGFloat = 140
+        return CGPoint(
+            x: centerX + CGFloat(sin(relativeBearing)) * scale,
+            y: centerY - CGFloat(cos(relativeBearing)) * scale
+        )
+    }
 
-        // Horizontal bearing in camera space — valid even when the target is behind the viewer.
-        let horizontalX = cameraPoint.x
-        let horizontalY = -cameraPoint.y
-        let horizontalLength = hypot(Double(horizontalX), Double(horizontalY))
-
-        if horizontalLength > 0.02 {
-            let nx = CGFloat(horizontalX / Float(horizontalLength))
-            let ny = CGFloat(horizontalY / Float(horizontalLength))
-            return CGPoint(x: centerX + nx * scale, y: centerY + ny * scale)
-        }
-
-        if cameraPoint.y > 0.1 {
-            return CGPoint(x: centerX, y: centerY - scale)
-        }
-        if cameraPoint.y < -0.1 {
-            return CGPoint(x: centerX, y: centerY + scale)
-        }
-        return CGPoint(x: centerX, y: centerY + (cameraPoint.z > 0 ? scale : -scale))
+    private func isInFrontForSearch(cameraZ: Float) -> Bool {
+        cameraZ < 0.05
     }
 
     private func searchGuidanceTarget(for body: CelestialBody) -> CGPoint? {
         guard viewportSize.width > 0, viewportSize.height > 0 else { return nil }
 
-        let projectionViewport = lastProjectionViewport.width > 0 ? lastProjectionViewport : viewportSize
-        let direction = cameraDirection(for: body, yawCorrection: lastYawCorrection)
-        let cameraPoint = (lastViewMatrix * SIMD4<Float>(direction, 0)).xyz
+        let relativeBearing = relativeHorizontalBearing(to: body)
+        let isBehind = abs(relativeBearing) >= .pi / 2
 
-        if isInFront(cameraZ: cameraPoint.z, altitude: body.altitude),
-           let projection = project(
-               azimuth: body.azimuth,
-               altitude: body.altitude,
-               viewMatrix: lastViewMatrix,
-               projectionMatrix: lastProjectionMatrix,
-               viewportSize: projectionViewport,
-               screenOffset: lastScreenOffset,
-               yawCorrection: lastYawCorrection
-           ) {
-            return projection.point
+        if !isBehind {
+            let projectionViewport = lastProjectionViewport.width > 0 ? lastProjectionViewport : viewportSize
+            let direction = cameraDirection(for: body, yawCorrection: lastYawCorrection)
+            let cameraPoint = (lastViewMatrix * SIMD4<Float>(direction, 0)).xyz
+
+            if isInFrontForSearch(cameraZ: cameraPoint.z),
+               let projection = project(
+                   azimuth: body.azimuth,
+                   altitude: body.altitude,
+                   viewMatrix: lastViewMatrix,
+                   projectionMatrix: lastProjectionMatrix,
+                   viewportSize: projectionViewport,
+                   screenOffset: lastScreenOffset,
+                   yawCorrection: lastYawCorrection
+               ) {
+                return projection.point
+            }
         }
 
-        return cameraSpaceGuidanceHint(cameraPoint: cameraPoint, viewportSize: viewportSize)
+        return horizontalBearingHint(relativeBearing: relativeBearing, viewportSize: viewportSize)
     }
 
     private func compassHeadingDegrees(from heading: CLHeading) -> Double? {
@@ -469,9 +481,10 @@ final class StargazerModel: ObservableObject {
     }
 
     private func isSearchTargetInFront(for body: CelestialBody) -> Bool {
+        guard abs(relativeHorizontalBearing(to: body)) < .pi / 2 else { return false }
         let direction = cameraDirection(for: body, yawCorrection: lastYawCorrection)
         let cameraPoint = (lastViewMatrix * SIMD4<Float>(direction, 0)).xyz
-        return isInFront(cameraZ: cameraPoint.z, altitude: body.altitude)
+        return isInFrontForSearch(cameraZ: cameraPoint.z)
     }
 
     func updateSearchGuidance(projectedPoint: CGPoint?) {
@@ -628,6 +641,7 @@ final class StargazerModel: ObservableObject {
         let projectionMatrix = frame.camera.projectionMatrix(for: .portrait, viewportSize: projectionViewport, zNear: 0.01, zFar: 1000)
         latchCompassOffsetIfNeeded(for: frame)
         let yawCorrection = compassYawOffset
+        lastCameraHeading = cameraHeadingRadians(from: frame)
         lastViewMatrix = viewMatrix
         lastProjectionMatrix = projectionMatrix
         lastYawCorrection = yawCorrection
