@@ -27,6 +27,12 @@ struct ContentView: View {
                 .padding(.horizontal, 16)
                 .padding(.bottom, 8)
         }
+        .overlay {
+            searchGuidanceArrow
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+        }
         .alert("The Horizon Line", isPresented: .init(
             get: { !hasSeenHorizonIntro },
             set: { isPresented in
@@ -37,7 +43,7 @@ struct ContentView: View {
                 hasSeenHorizonIntro = true
             }
         } message: {
-            Text("The faint white arc marks Earth's horizon. Bodies above it are in the sky; below it are out of view. Use the compass button if alignment looks off.")
+            Text("The faint white arc marks Earth's horizon. Bodies above it are in the sky; below it are out of view.")
         }
         .sheet(isPresented: $showSearchSheet) {
             searchSheet
@@ -85,8 +91,6 @@ struct ContentView: View {
             if model.showHorizon, model.horizonPoints.count > 1 {
                 horizonOverlay
             }
-
-            searchGuidanceArrow
         }
         .allowsHitTesting(true)
     }
@@ -110,10 +114,10 @@ struct ContentView: View {
     // MARK: - Chrome (safe-area insets)
 
     private var topHeader: some View {
-        HStack(spacing: 8) {
+        HStack {
             Spacer(minLength: 0)
             locationHeader
-            compassResetButton
+            Spacer(minLength: 0)
         }
     }
 
@@ -126,20 +130,6 @@ struct ContentView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .background(.ultraThinMaterial, in: Capsule())
-    }
-
-    private var compassResetButton: some View {
-        Button {
-            model.resetCompassAlignment()
-        } label: {
-            Image(systemName: "location.north.line.fill")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundColor(.white)
-                .frame(width: 34, height: 34)
-                .background(.ultraThinMaterial, in: Circle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Reset compass")
     }
 
     private var bottomMenuBar: some View {
@@ -454,12 +444,11 @@ struct ContentView: View {
     private var searchGuidanceArrow: some View {
         if model.searchArrow.isVisible {
             Image(systemName: "arrow.up")
-                .font(.system(size: 22, weight: .bold))
+                .font(.system(size: 24, weight: .bold))
                 .foregroundColor(.white)
-                .shadow(color: .black.opacity(0.55), radius: 5)
+                .shadow(color: .black.opacity(0.75), radius: 6)
                 .rotationEffect(.radians(model.searchArrow.angle + .pi / 2))
                 .position(model.searchArrow.position)
-                .allowsHitTesting(false)
         }
     }
 

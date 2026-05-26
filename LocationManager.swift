@@ -21,16 +21,6 @@ final class LocationManager: NSObject {
         startUpdatesIfAuthorized()
     }
 
-    func resetHeading() {
-        guard manager.authorizationStatus == .authorizedWhenInUse ||
-              manager.authorizationStatus == .authorizedAlways else {
-            return
-        }
-        manager.stopUpdatingHeading()
-        manager.headingOrientation = .portrait
-        manager.startUpdatingHeading()
-    }
-
     private func startUpdatesIfAuthorized() {
         switch manager.authorizationStatus {
         case .authorizedWhenInUse, .authorizedAlways:

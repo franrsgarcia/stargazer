@@ -55,20 +55,15 @@ final class StargazerModel: ObservableObject {
     @Published var viewportSize: CGSize = UIScreen.main.bounds.size
     @Published var locationLabel = "Locating..."
     @Published var cardinalMarkers: [CardinalMarker] = []
-    @Published private(set) var compassResetToken = UUID()
 
     private var selectedTrajectorySamples: [(date: Date, az: Double, alt: Double, isFuture: Bool)] = []
     private let geocoder = CLGeocoder()
     private var lastGeocodedCoordinate: CLLocationCoordinate2D?
     private var smoothedOverlays: [String: CGPoint] = [:]
     private var searchGuidanceComplete = false
-    private var lastYawCorrection: Float = 0
-    private var compassYawOffset: Float = 0
-    private var shouldLatchCompassOffset = false
+    private var lastSearchRelativeDegrees: Double?
     private var lastProjectionViewport: CGSize = .zero
     private var lastScreenOffset: CGPoint = .zero
-    private var lastCameraHeading: Float = 0
-    private var searchGuidanceBearingState: Float?
 
     private let locationManager = LocationManager()
     private var currentLocation: CLLocation?
@@ -140,15 +135,6 @@ final class StargazerModel: ObservableObject {
             }
         }
         refreshCelestialData()
-    }
-
-    /// Re-sync sky alignment to the device compass (no manual calibration targets).
-    func resetCompassAlignment() {
-        locationManager.resetHeading()
-        compassResetToken = UUID()
-        compassYawOffset = 0
-        shouldLatchCompassOffset = true
-        statusText = "Compass realigned"
     }
 
     func refreshCelestialData() {
@@ -227,7 +213,7 @@ final class StargazerModel: ObservableObject {
     private func resetSearchGuidance() {
         searchGuidanceComplete = false
         searchInfoRevealed = false
-        searchGuidanceBearingState = nil
+        lastSearchRelativeDegrees = nil
         searchArrow = SearchArrowState()
     }
 
@@ -285,115 +271,6 @@ final class StargazerModel: ObservableObject {
         bodyOverlays[name]
     }
 
-    private func cameraDirection(for body: CelestialBody, yawCorrection: Float) -> SIMD3<Float> {
-        var direction = CelestialCalculator.directionVector(azimuth: body.azimuth, altitude: body.altitude)
-        if abs(yawCorrection) > 0.0001 {
-            direction = rotateAroundY(direction, by: yawCorrection)
-        }
-        return direction
-    }
-
-    private func normalizeAngleRadians(_ radians: Float) -> Float {
-        var angle = radians
-        while angle > .pi { angle -= 2 * .pi }
-        while angle < -.pi { angle += 2 * .pi }
-        return angle
-    }
-
-    private func geographicCameraHeadingRadians() -> Float {
-        lastCameraHeading + compassYawOffset
-    }
-
-    private func relativeHorizontalBearing(to body: CelestialBody) -> Float {
-        let bodyAzimuth = Float(body.azimuth * .pi / 180)
-        return normalizeAngleRadians(bodyAzimuth - geographicCameraHeadingRadians())
-    }
-
-    /// Screen-space unit vector toward a body at the given relative bearing.
-    private func screenDirection(for relativeBearing: Float) -> (dx: CGFloat, dy: CGFloat) {
-        (CGFloat(sin(relativeBearing)), CGFloat(-cos(relativeBearing)))
-    }
-
-    /// Smooth bearing when the target is behind the viewer and avoid ±π wrap jumps.
-    private func stabilizedSearchBearing(for body: CelestialBody) -> Float {
-        let raw = relativeHorizontalBearing(to: body)
-        guard abs(raw) >= .pi / 2 else {
-            searchGuidanceBearingState = nil
-            return raw
-        }
-
-        let oppositeThreshold = Float(150 * .pi / 180)
-        let working: Float
-        if abs(raw) > oppositeThreshold {
-            let sign: Float
-            if let state = searchGuidanceBearingState, abs(state) >= .pi / 2 {
-                sign = state >= 0 ? 1 : -1
-            } else {
-                sign = raw >= 0 ? 1 : -1
-            }
-            working = sign * max(abs(raw), oppositeThreshold)
-        } else {
-            working = raw
-        }
-
-        let smoothed: Float
-        if let state = searchGuidanceBearingState {
-            smoothed = state + (working - state) * 0.22
-        } else {
-            smoothed = working
-        }
-        searchGuidanceBearingState = smoothed
-        return smoothed
-    }
-
-    private func projectedSearchPoint(for body: CelestialBody) -> CGPoint? {
-        let projectionViewport = lastProjectionViewport.width > 0 ? lastProjectionViewport : viewportSize
-        let direction = cameraDirection(for: body, yawCorrection: lastYawCorrection)
-        let cameraPoint = (lastViewMatrix * SIMD4<Float>(direction, 0)).xyz
-        guard isInFrontForSearch(cameraZ: cameraPoint.z) else { return nil }
-
-        return project(
-            azimuth: body.azimuth,
-            altitude: body.altitude,
-            viewMatrix: lastViewMatrix,
-            projectionMatrix: lastProjectionMatrix,
-            viewportSize: projectionViewport,
-            screenOffset: lastScreenOffset,
-            yawCorrection: lastYawCorrection
-        )?.point
-    }
-
-    /// Edge placement for behind-target search — arrow points along the turn direction (outward from center).
-    private func searchEdgePlacement(
-        relativeBearing: Float,
-        in size: CGSize,
-        margin: CGFloat = 44
-    ) -> (point: CGPoint, angle: Double) {
-        let cx = size.width / 2
-        let cy = size.height / 2
-        let direction = screenDirection(for: relativeBearing)
-        let dx = direction.dx
-        let dy = direction.dy
-
-        if abs(dx) < 0.001 && abs(dy) < 0.001 {
-            let point = CGPoint(x: cx, y: cy + max(size.height / 2 - margin, 1))
-            return (point, .pi / 2)
-        }
-
-        let halfW = max(size.width / 2 - margin, 1)
-        let halfH = max(size.height / 2 - margin, 1)
-        let scaleX = dx != 0 ? abs(halfW / dx) : .infinity
-        let scaleY = dy != 0 ? abs(halfH / dy) : .infinity
-        let scale = min(scaleX, scaleY)
-        let edgePoint = CGPoint(x: cx + dx * scale, y: cy + dy * scale)
-        let angle = atan2(dy, dx)
-        return (edgePoint, angle)
-    }
-
-    private func isInFrontForSearch(cameraZ: Float) -> Bool {
-        cameraZ < 0.05
-    }
-
     private func compassHeadingDegrees(from heading: CLHeading) -> Double? {
         if heading.trueHeading >= 0 {
             return heading.trueHeading
@@ -404,34 +281,63 @@ final class StargazerModel: ObservableObject {
         return nil
     }
 
-    /// Horizontal camera heading in ARKit world space (0 = north, π/2 = east).
-    private func cameraHeadingRadians(from frame: ARFrame) -> Float {
-        let transform = frame.camera.transform
-        let forward = SIMD3<Float>(-transform.columns.2.x, 0, -transform.columns.2.z)
-        let length = simd_length(forward)
-        guard length > 0.001 else { return 0 }
-        let normalized = forward / length
-        return atan2(normalized.x, -normalized.z)
-    }
-
-    /// Snap a fixed north offset when the user resets — device rotation stays in the AR view matrix.
-    private func latchCompassOffsetIfNeeded(for frame: ARFrame) {
-        guard shouldLatchCompassOffset else { return }
+    /// Geographic bearing to the body relative to where the phone is pointing (degrees, ±180).
+    private func compassRelativeBearingDegrees(to body: CelestialBody) -> Double? {
         guard let heading = currentHeading,
-              let compassDegrees = compassHeadingDegrees(from: heading) else {
-            return
+              let deviceHeading = compassHeadingDegrees(from: heading) else {
+            return nil
         }
 
-        let compassRadians = Float(compassDegrees * .pi / 180)
-        let arkitHeading = cameraHeadingRadians(from: frame)
-        compassYawOffset = compassRadians - arkitHeading
-        shouldLatchCompassOffset = false
+        var relative = body.azimuth - deviceHeading
+        while relative > 180 { relative -= 360 }
+        while relative < -180 { relative += 360 }
+        return relative
     }
 
-    private func rotateAroundY(_ vector: SIMD3<Float>, by angle: Float) -> SIMD3<Float> {
-        guard abs(angle) > 0.0001 else { return vector }
-        let q = simd_quatf(angle: angle, axis: SIMD3<Float>(0, 1, 0))
-        return simd_act(q, vector)
+    private func smoothedCompassRelativeBearing(for body: CelestialBody) -> Double? {
+        guard let raw = compassRelativeBearingDegrees(to: body) else { return nil }
+
+        guard let last = lastSearchRelativeDegrees else {
+            lastSearchRelativeDegrees = raw
+            return raw
+        }
+
+        var delta = raw - last
+        while delta > 180 { delta -= 360 }
+        while delta < -180 { delta += 360 }
+
+        var next = last + delta * 0.28
+        while next > 180 { next -= 360 }
+        while next < -180 { next += 360 }
+
+        lastSearchRelativeDegrees = next
+        return next
+    }
+
+    /// Map compass bearing to a screen-edge point; arrow angle follows the bearing ray.
+    private func compassEdgePlacement(
+        relativeDegrees: Double,
+        in size: CGSize,
+        margin: CGFloat = 44
+    ) -> (point: CGPoint, angle: Double) {
+        let radians = relativeDegrees * .pi / 180
+        let dx = CGFloat(sin(radians))
+        let dy = CGFloat(-cos(radians))
+        let cx = size.width / 2
+        let cy = size.height / 2
+
+        if abs(dx) < 0.001 && abs(dy) < 0.001 {
+            let point = CGPoint(x: cx, y: cy + max(size.height / 2 - margin, 1))
+            return (point, Double.pi / 2)
+        }
+
+        let halfW = max(size.width / 2 - margin, 1)
+        let halfH = max(size.height / 2 - margin, 1)
+        let scaleX = dx != 0 ? abs(halfW / dx) : .infinity
+        let scaleY = dy != 0 ? abs(halfH / dy) : .infinity
+        let scale = min(scaleX, scaleY)
+        let edgePoint = CGPoint(x: cx + dx * scale, y: cy + dy * scale)
+        return (edgePoint, atan2(dy, dx))
     }
 
     private func project(
@@ -440,13 +346,9 @@ final class StargazerModel: ObservableObject {
         viewMatrix: simd_float4x4,
         projectionMatrix: simd_float4x4,
         viewportSize: CGSize,
-        screenOffset: CGPoint = .zero,
-        yawCorrection: Float = 0
+        screenOffset: CGPoint = .zero
     ) -> (point: CGPoint, cameraZ: Float)? {
-        var direction = CelestialCalculator.directionVector(azimuth: azimuth, altitude: altitude)
-        if abs(yawCorrection) > 0.0001 {
-            direction = rotateAroundY(direction, by: yawCorrection)
-        }
+        let direction = CelestialCalculator.directionVector(azimuth: azimuth, altitude: altitude)
         let cameraPoint = viewMatrix * SIMD4<Float>(direction, 0)
         let cameraZ = cameraPoint.z
 
@@ -534,43 +436,33 @@ final class StargazerModel: ObservableObject {
         let centerX = size.width / 2
         let centerY = size.height / 2
         let threshold = min(size.width, size.height) * 0.14
-        let bearing = stabilizedSearchBearing(for: body)
-        let inFront = abs(bearing) < .pi / 2
 
-        if inFront, let target = bodyOverlays[bodyName] ?? projectedSearchPoint(for: body) {
+        if let target = bodyOverlays[bodyName], isOnScreen(target, in: size) {
             let distance = hypot(target.x - centerX, target.y - centerY)
-            let onScreen = isOnScreen(target, in: size)
-            let viewportCenter = CGPoint(x: centerX, y: centerY)
-
-            if onScreen {
-                let clearance = markerClearance(for: body)
-                let placement = offsetArrowPlacement(
-                    pointingTo: target,
-                    approachFrom: viewportCenter,
-                    clearance: clearance
-                )
-                searchArrow.isVisible = true
-                searchArrow.position = placement.point
-                searchArrow.angle = placement.angle
-                searchArrow.mode = .onBody
-
-                if distance < threshold {
-                    searchGuidanceComplete = true
-                    searchInfoRevealed = true
-                    searchArrow.isVisible = false
-                }
-                return
-            }
-
-            let edge = edgePlacement(toward: target, in: size)
+            let placement = offsetArrowPlacement(
+                pointingTo: target,
+                approachFrom: CGPoint(x: centerX, y: centerY),
+                clearance: markerClearance(for: body)
+            )
             searchArrow.isVisible = true
-            searchArrow.position = edge.point
-            searchArrow.angle = edge.angle
-            searchArrow.mode = .edge
+            searchArrow.position = placement.point
+            searchArrow.angle = placement.angle
+            searchArrow.mode = .onBody
+
+            if distance < threshold {
+                searchGuidanceComplete = true
+                searchInfoRevealed = true
+                searchArrow.isVisible = false
+            }
             return
         }
 
-        let edge = searchEdgePlacement(relativeBearing: bearing, in: size)
+        guard let relativeDegrees = smoothedCompassRelativeBearing(for: body) else {
+            searchArrow.isVisible = false
+            return
+        }
+
+        let edge = compassEdgePlacement(relativeDegrees: relativeDegrees, in: size)
         searchArrow.isVisible = true
         searchArrow.position = edge.point
         searchArrow.angle = edge.angle
@@ -587,7 +479,6 @@ final class StargazerModel: ObservableObject {
         projectionViewport: CGSize,
         visibleViewport: CGSize,
         screenOffset: CGPoint,
-        yawCorrection: Float,
         maxJump: CGFloat
     ) -> [[CGPoint]] {
         var segments: [[CGPoint]] = []
@@ -608,8 +499,7 @@ final class StargazerModel: ObservableObject {
                 viewMatrix: viewMatrix,
                 projectionMatrix: projectionMatrix,
                 viewportSize: projectionViewport,
-                screenOffset: screenOffset,
-                yawCorrection: yawCorrection
+                screenOffset: screenOffset
             ), projection.cameraZ < inFrontThreshold else {
                 flush()
                 continue
@@ -681,12 +571,8 @@ final class StargazerModel: ObservableObject {
         let projectionOffset = CGPoint(x: arViewFrame?.origin.x ?? 0, y: arViewFrame?.origin.y ?? 0)
         let viewMatrix = frame.camera.viewMatrix(for: .portrait)
         let projectionMatrix = frame.camera.projectionMatrix(for: .portrait, viewportSize: projectionViewport, zNear: 0.01, zFar: 1000)
-        latchCompassOffsetIfNeeded(for: frame)
-        let yawCorrection = compassYawOffset
-        lastCameraHeading = cameraHeadingRadians(from: frame)
         lastViewMatrix = viewMatrix
         lastProjectionMatrix = projectionMatrix
-        lastYawCorrection = yawCorrection
         lastProjectionViewport = projectionViewport
         lastScreenOffset = projectionOffset
 
@@ -699,8 +585,7 @@ final class StargazerModel: ObservableObject {
                 viewMatrix: viewMatrix,
                 projectionMatrix: projectionMatrix,
                 viewportSize: projectionViewport,
-                screenOffset: projectionOffset,
-                yawCorrection: yawCorrection
+                screenOffset: projectionOffset
             ), isInFront(cameraZ: projection.cameraZ, altitude: body.altitude) else {
                 continue
             }
@@ -725,7 +610,6 @@ final class StargazerModel: ObservableObject {
                 projectionViewport: projectionViewport,
                 visibleViewport: viewportSize,
                 screenOffset: projectionOffset,
-                yawCorrection: yawCorrection,
                 maxJump: maxJump
             )
             futureSegments = buildTrajectorySegments(
@@ -735,7 +619,6 @@ final class StargazerModel: ObservableObject {
                 projectionViewport: projectionViewport,
                 visibleViewport: viewportSize,
                 screenOffset: projectionOffset,
-                yawCorrection: yawCorrection,
                 maxJump: maxJump
             )
         }
@@ -748,8 +631,7 @@ final class StargazerModel: ObservableObject {
                 viewMatrix: viewMatrix,
                 projectionMatrix: projectionMatrix,
                 viewportSize: projectionViewport,
-                screenOffset: projectionOffset,
-                yawCorrection: yawCorrection
+                screenOffset: projectionOffset
             ), projection.cameraZ < 0.05 else { continue }
             horizonPts.append(projection.point)
         }
@@ -763,8 +645,7 @@ final class StargazerModel: ObservableObject {
                     viewMatrix: viewMatrix,
                     projectionMatrix: projectionMatrix,
                     viewportSize: projectionViewport,
-                    screenOffset: projectionOffset,
-                    yawCorrection: yawCorrection
+                    screenOffset: projectionOffset
                 ), projection.cameraZ < 0.05 else { continue }
 
                 let x = projection.point.x
@@ -789,12 +670,6 @@ final class StargazerModel: ObservableObject {
     }
 }
 
-private extension SIMD4 where Scalar == Float {
-    var xyz: SIMD3<Float> {
-        SIMD3(x, y, z)
-    }
-}
-
 extension StargazerModel: LocationManagerDelegate {
     nonisolated func locationManager(didUpdate location: CLLocation?, heading: CLHeading?) {
         Task { @MainActor in
@@ -816,6 +691,9 @@ extension StargazerModel: LocationManagerDelegate {
             }
             if locationChanged {
                 refreshCelestialData()
+            }
+            if heading != nil, selectionSource == .search {
+                updateSearchGuidance()
             }
         }
     }
