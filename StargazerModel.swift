@@ -66,7 +66,7 @@ final class StargazerModel: ObservableObject {
     private var lastGeocodedCoordinate: CLLocationCoordinate2D?
     private var smoothedOverlays: [String: CGPoint] = [:]
     private var searchGuidanceComplete = false
-    private var lockedCoarseTurn: CoarseTurnDirection?
+    private var searchPanDirection: CoarseTurnDirection?
     private var smoothedSearchArrowPoint: CGPoint?
     private var smoothedSearchArrowAngle: Double?
     private var lastProjectionViewport: CGSize = .zero
@@ -220,7 +220,7 @@ final class StargazerModel: ObservableObject {
     private func resetSearchGuidance() {
         searchGuidanceComplete = false
         searchInfoRevealed = false
-        lockedCoarseTurn = nil
+        searchPanDirection = nil
         smoothedSearchArrowPoint = nil
         smoothedSearchArrowAngle = nil
         searchArrow = SearchArrowState()
@@ -293,6 +293,7 @@ final class StargazerModel: ObservableObject {
     /// Degrees off-target before we show a simple turn-left/right hint.
     private static let fineGuidanceThresholdDegrees = 80.0
     private static let coarseUnlockThresholdDegrees = 60.0
+    private static let frontArcLockDegrees = 38.0
     private static let searchArrowSmoothingFactor: CGFloat = 0.26
     /// Treat targets slightly off-screen as close enough to point at directly.
     private static let searchOnScreenExpansion: CGFloat = 88
@@ -309,14 +310,61 @@ final class StargazerModel: ObservableObject {
         return relative
     }
 
+    private func ensureSearchPanDirection(
+        relativeDegrees: Double?,
+        projectedTarget: CGPoint?,
+        centerX: CGFloat
+    ) {
+        guard searchPanDirection == nil else { return }
+        if let projectedTarget {
+            searchPanDirection = projectedTarget.x >= centerX ? .right : .left
+        } else if let relativeDegrees {
+            searchPanDirection = relativeDegrees >= 0 ? .right : .left
+        }
+    }
+
+    private func updateSearchPanDirection(relativeDegrees: Double) {
+        if abs(relativeDegrees) >= Self.fineGuidanceThresholdDegrees {
+            searchPanDirection = relativeDegrees > 0 ? .right : .left
+        }
+    }
+
+    private func panLockedRelativeDegrees(_ relativeDegrees: Double) -> Double {
+        guard let pan = searchPanDirection,
+              abs(relativeDegrees) < Self.frontArcLockDegrees else {
+            return relativeDegrees
+        }
+        let magnitude = max(abs(relativeDegrees), 12)
+        return pan == .right ? magnitude : -magnitude
+    }
+
+    private func constrainTargetToPanSide(
+        _ target: CGPoint,
+        in size: CGSize,
+        panDirection: CoarseTurnDirection
+    ) -> CGPoint {
+        let cx = size.width / 2
+        let minimumOffset: CGFloat = 72
+
+        switch panDirection {
+        case .right:
+            guard target.x < cx else { return target }
+            return CGPoint(x: cx + minimumOffset, y: target.y)
+        case .left:
+            guard target.x > cx else { return target }
+            return CGPoint(x: cx - minimumOffset, y: target.y)
+        }
+    }
+
     private func resolveCoarseTurn(relativeDegrees: Double) -> CoarseTurnDirection? {
         let absRelative = abs(relativeDegrees)
+        updateSearchPanDirection(relativeDegrees: relativeDegrees)
 
         if absRelative >= Self.fineGuidanceThresholdDegrees {
-            return relativeDegrees > 0 ? .right : .left
+            return searchPanDirection
         }
 
-        if let locked = lockedCoarseTurn, absRelative > Self.coarseUnlockThresholdDegrees {
+        if let locked = searchPanDirection, absRelative > Self.coarseUnlockThresholdDegrees {
             return locked
         }
 
@@ -492,10 +540,18 @@ final class StargazerModel: ObservableObject {
         let rawPlacement: (point: CGPoint, angle: Double)
         let rawMode: SearchArrowMode
         var shouldComplete = false
+        let relativeDegrees = compassRelativeBearingDegrees(to: body)
 
         if let target = bodyOverlays[bodyName],
            isOnScreen(target, in: size, margin: -Self.searchOnScreenExpansion) {
-            lockedCoarseTurn = nil
+            ensureSearchPanDirection(
+                relativeDegrees: relativeDegrees,
+                projectedTarget: target,
+                centerX: centerX
+            )
+            if let relativeDegrees {
+                updateSearchPanDirection(relativeDegrees: relativeDegrees)
+            }
             let distance = hypot(target.x - centerX, target.y - centerY)
             rawPlacement = offsetArrowPlacement(
                 pointingTo: target,
@@ -509,15 +565,37 @@ final class StargazerModel: ObservableObject {
         } else {
             rawMode = .edge
             if let target = bodyOverlays[bodyName] {
-                lockedCoarseTurn = nil
-                rawPlacement = edgeGuidancePlacement(toward: target, in: size, pointAtTarget: true)
-            } else if let relativeDegrees = compassRelativeBearingDegrees(to: body) {
+                ensureSearchPanDirection(
+                    relativeDegrees: relativeDegrees,
+                    projectedTarget: target,
+                    centerX: centerX
+                )
+                if let relativeDegrees {
+                    updateSearchPanDirection(relativeDegrees: relativeDegrees)
+                }
+
+                var guidedTarget = target
+                if let pan = searchPanDirection,
+                   let relativeDegrees,
+                   abs(relativeDegrees) < Self.frontArcLockDegrees {
+                    guidedTarget = constrainTargetToPanSide(target, in: size, panDirection: pan)
+                }
+                rawPlacement = edgeGuidancePlacement(
+                    toward: guidedTarget,
+                    in: size,
+                    pointAtTarget: true
+                )
+            } else if let relativeDegrees {
+                ensureSearchPanDirection(
+                    relativeDegrees: relativeDegrees,
+                    projectedTarget: nil,
+                    centerX: centerX
+                )
                 if let coarseTurn = resolveCoarseTurn(relativeDegrees: relativeDegrees) {
-                    lockedCoarseTurn = coarseTurn
                     rawPlacement = coarseTurnPlacement(coarseTurn, in: size)
                 } else {
-                    lockedCoarseTurn = nil
-                    rawPlacement = fineGuidancePlacement(relativeDegrees: relativeDegrees, in: size)
+                    let adjusted = panLockedRelativeDegrees(relativeDegrees)
+                    rawPlacement = fineGuidancePlacement(relativeDegrees: adjusted, in: size)
                 }
             } else {
                 searchArrow.isVisible = false
