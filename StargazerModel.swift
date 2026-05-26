@@ -68,6 +68,7 @@ final class StargazerModel: ObservableObject {
     private var lastProjectionViewport: CGSize = .zero
     private var lastScreenOffset: CGPoint = .zero
     private var lastCameraHeading: Float = 0
+    private var searchGuidanceBearingState: Float?
 
     private let locationManager = LocationManager()
     private var currentLocation: CLLocation?
@@ -209,7 +210,7 @@ final class StargazerModel: ObservableObject {
             return
         }
 
-        updateSearchGuidance(projectedPoint: searchGuidanceTarget(for: body))
+        updateSearchGuidance()
     }
 
     func clearSelection() {
@@ -226,6 +227,7 @@ final class StargazerModel: ObservableObject {
     private func resetSearchGuidance() {
         searchGuidanceComplete = false
         searchInfoRevealed = false
+        searchGuidanceBearingState = nil
         searchArrow = SearchArrowState()
     }
 
@@ -307,47 +309,89 @@ final class StargazerModel: ObservableObject {
         return normalizeAngleRadians(bodyAzimuth - geographicCameraHeadingRadians())
     }
 
-    /// Screen hint from horizontal bearing: 0° ahead, +° right, ±180° behind.
-    private func horizontalBearingHint(relativeBearing: Float, viewportSize: CGSize) -> CGPoint {
-        let centerX = viewportSize.width / 2
-        let centerY = viewportSize.height / 2
-        let scale: CGFloat = 140
-        return CGPoint(
-            x: centerX + CGFloat(sin(relativeBearing)) * scale,
-            y: centerY - CGFloat(cos(relativeBearing)) * scale
-        )
+    /// Screen-space unit vector toward a body at the given relative bearing.
+    private func screenDirection(for relativeBearing: Float) -> (dx: CGFloat, dy: CGFloat) {
+        (CGFloat(sin(relativeBearing)), CGFloat(-cos(relativeBearing)))
+    }
+
+    /// Smooth bearing when the target is behind the viewer and avoid ±π wrap jumps.
+    private func stabilizedSearchBearing(for body: CelestialBody) -> Float {
+        let raw = relativeHorizontalBearing(to: body)
+        guard abs(raw) >= .pi / 2 else {
+            searchGuidanceBearingState = nil
+            return raw
+        }
+
+        let oppositeThreshold = Float(150 * .pi / 180)
+        let working: Float
+        if abs(raw) > oppositeThreshold {
+            let sign: Float
+            if let state = searchGuidanceBearingState, abs(state) >= .pi / 2 {
+                sign = state >= 0 ? 1 : -1
+            } else {
+                sign = raw >= 0 ? 1 : -1
+            }
+            working = sign * max(abs(raw), oppositeThreshold)
+        } else {
+            working = raw
+        }
+
+        let smoothed: Float
+        if let state = searchGuidanceBearingState {
+            smoothed = state + (working - state) * 0.22
+        } else {
+            smoothed = working
+        }
+        searchGuidanceBearingState = smoothed
+        return smoothed
+    }
+
+    private func projectedSearchPoint(for body: CelestialBody) -> CGPoint? {
+        let projectionViewport = lastProjectionViewport.width > 0 ? lastProjectionViewport : viewportSize
+        let direction = cameraDirection(for: body, yawCorrection: lastYawCorrection)
+        let cameraPoint = (lastViewMatrix * SIMD4<Float>(direction, 0)).xyz
+        guard isInFrontForSearch(cameraZ: cameraPoint.z) else { return nil }
+
+        return project(
+            azimuth: body.azimuth,
+            altitude: body.altitude,
+            viewMatrix: lastViewMatrix,
+            projectionMatrix: lastProjectionMatrix,
+            viewportSize: projectionViewport,
+            screenOffset: lastScreenOffset,
+            yawCorrection: lastYawCorrection
+        )?.point
+    }
+
+    /// Edge placement for behind-target search — arrow points along the turn direction (outward from center).
+    private func searchEdgePlacement(
+        relativeBearing: Float,
+        in size: CGSize,
+        margin: CGFloat = 44
+    ) -> (point: CGPoint, angle: Double) {
+        let cx = size.width / 2
+        let cy = size.height / 2
+        let direction = screenDirection(for: relativeBearing)
+        let dx = direction.dx
+        let dy = direction.dy
+
+        if abs(dx) < 0.001 && abs(dy) < 0.001 {
+            let point = CGPoint(x: cx, y: cy + max(size.height / 2 - margin, 1))
+            return (point, .pi / 2)
+        }
+
+        let halfW = max(size.width / 2 - margin, 1)
+        let halfH = max(size.height / 2 - margin, 1)
+        let scaleX = dx != 0 ? abs(halfW / dx) : .infinity
+        let scaleY = dy != 0 ? abs(halfH / dy) : .infinity
+        let scale = min(scaleX, scaleY)
+        let edgePoint = CGPoint(x: cx + dx * scale, y: cy + dy * scale)
+        let angle = atan2(dy, dx)
+        return (edgePoint, angle)
     }
 
     private func isInFrontForSearch(cameraZ: Float) -> Bool {
         cameraZ < 0.05
-    }
-
-    private func searchGuidanceTarget(for body: CelestialBody) -> CGPoint? {
-        guard viewportSize.width > 0, viewportSize.height > 0 else { return nil }
-
-        let relativeBearing = relativeHorizontalBearing(to: body)
-        let isBehind = abs(relativeBearing) >= .pi / 2
-
-        if !isBehind {
-            let projectionViewport = lastProjectionViewport.width > 0 ? lastProjectionViewport : viewportSize
-            let direction = cameraDirection(for: body, yawCorrection: lastYawCorrection)
-            let cameraPoint = (lastViewMatrix * SIMD4<Float>(direction, 0)).xyz
-
-            if isInFrontForSearch(cameraZ: cameraPoint.z),
-               let projection = project(
-                   azimuth: body.azimuth,
-                   altitude: body.altitude,
-                   viewMatrix: lastViewMatrix,
-                   projectionMatrix: lastProjectionMatrix,
-                   viewportSize: projectionViewport,
-                   screenOffset: lastScreenOffset,
-                   yawCorrection: lastYawCorrection
-               ) {
-                return projection.point
-            }
-        }
-
-        return horizontalBearingHint(relativeBearing: relativeBearing, viewportSize: viewportSize)
     }
 
     private func compassHeadingDegrees(from heading: CLHeading) -> Double? {
@@ -480,14 +524,7 @@ final class StargazerModel: ObservableObject {
         return (edgePoint, angle)
     }
 
-    private func isSearchTargetInFront(for body: CelestialBody) -> Bool {
-        guard abs(relativeHorizontalBearing(to: body)) < .pi / 2 else { return false }
-        let direction = cameraDirection(for: body, yawCorrection: lastYawCorrection)
-        let cameraPoint = (lastViewMatrix * SIMD4<Float>(direction, 0)).xyz
-        return isInFrontForSearch(cameraZ: cameraPoint.z)
-    }
-
-    func updateSearchGuidance(projectedPoint: CGPoint?) {
+    func updateSearchGuidance() {
         guard selectionSource == .search, !searchGuidanceComplete else { return }
         guard let bodyName = selectedBodyName,
               let body = bodies.first(where: { $0.name == bodyName }),
@@ -497,42 +534,47 @@ final class StargazerModel: ObservableObject {
         let centerX = size.width / 2
         let centerY = size.height / 2
         let threshold = min(size.width, size.height) * 0.14
-        let inFront = isSearchTargetInFront(for: body)
+        let bearing = stabilizedSearchBearing(for: body)
+        let inFront = abs(bearing) < .pi / 2
 
-        guard let target = projectedPoint ?? bodyOverlays[bodyName] ?? searchGuidanceTarget(for: body) else {
-            searchArrow.isVisible = false
-            return
-        }
+        if inFront, let target = bodyOverlays[bodyName] ?? projectedSearchPoint(for: body) {
+            let distance = hypot(target.x - centerX, target.y - centerY)
+            let onScreen = isOnScreen(target, in: size)
+            let viewportCenter = CGPoint(x: centerX, y: centerY)
 
-        let distance = hypot(target.x - centerX, target.y - centerY)
-        let onScreen = isOnScreen(target, in: size)
+            if onScreen {
+                let clearance = markerClearance(for: body)
+                let placement = offsetArrowPlacement(
+                    pointingTo: target,
+                    approachFrom: viewportCenter,
+                    clearance: clearance
+                )
+                searchArrow.isVisible = true
+                searchArrow.position = placement.point
+                searchArrow.angle = placement.angle
+                searchArrow.mode = .onBody
 
-        let viewportCenter = CGPoint(x: centerX, y: centerY)
-
-        if inFront && onScreen {
-            let clearance = markerClearance(for: body)
-            let placement = offsetArrowPlacement(
-                pointingTo: target,
-                approachFrom: viewportCenter,
-                clearance: clearance
-            )
-            searchArrow.isVisible = true
-            searchArrow.position = placement.point
-            searchArrow.angle = placement.angle
-            searchArrow.mode = .onBody
-
-            if distance < threshold {
-                searchGuidanceComplete = true
-                searchInfoRevealed = true
-                searchArrow.isVisible = false
+                if distance < threshold {
+                    searchGuidanceComplete = true
+                    searchInfoRevealed = true
+                    searchArrow.isVisible = false
+                }
+                return
             }
-        } else {
+
             let edge = edgePlacement(toward: target, in: size)
             searchArrow.isVisible = true
             searchArrow.position = edge.point
             searchArrow.angle = edge.angle
             searchArrow.mode = .edge
+            return
         }
+
+        let edge = searchEdgePlacement(relativeBearing: bearing, in: size)
+        searchArrow.isVisible = true
+        searchArrow.position = edge.point
+        searchArrow.angle = edge.angle
+        searchArrow.mode = .edge
     }
 
     private var lastViewMatrix: simd_float4x4 = matrix_identity_float4x4
@@ -743,15 +785,7 @@ final class StargazerModel: ObservableObject {
         horizonPoints = horizonPts
         cardinalMarkers = cardinals
 
-        let searchPoint = selectedBodyName.flatMap { name in
-            if let overlay = bodyOverlays[name] {
-                return overlay
-            }
-            return bodies.first(where: { $0.name == name }).flatMap { body in
-                searchGuidanceTarget(for: body)
-            }
-        }
-        updateSearchGuidance(projectedPoint: searchPoint)
+        updateSearchGuidance()
     }
 }
 

@@ -18,25 +18,34 @@ final class LocationManager: NSObject {
     }
 
     func start() {
-        if CLLocationManager.locationServicesEnabled() {
-            manager.startUpdatingLocation()
-            if CLLocationManager.headingAvailable() {
-                manager.headingOrientation = .portrait
-                manager.startUpdatingHeading()
-            }
-        }
+        startUpdatesIfAuthorized()
     }
 
     func resetHeading() {
-        guard CLLocationManager.headingAvailable() else { return }
+        guard manager.authorizationStatus == .authorizedWhenInUse ||
+              manager.authorizationStatus == .authorizedAlways else {
+            return
+        }
         manager.stopUpdatingHeading()
         manager.headingOrientation = .portrait
         manager.startUpdatingHeading()
+    }
+
+    private func startUpdatesIfAuthorized() {
+        switch manager.authorizationStatus {
+        case .authorizedWhenInUse, .authorizedAlways:
+            manager.startUpdatingLocation()
+            manager.headingOrientation = .portrait
+            manager.startUpdatingHeading()
+        default:
+            break
+        }
     }
 }
 
 extension LocationManager: CLLocationManagerDelegate {
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        startUpdatesIfAuthorized()
         delegate?.locationManager(didUpdate: manager.location, heading: manager.heading)
     }
 
