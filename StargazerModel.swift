@@ -30,6 +30,12 @@ struct CardinalMarker: Identifiable {
     let isNorth: Bool
 }
 
+private enum CoarseTurnDirection {
+    case left
+    case right
+    case around
+}
+
 @MainActor
 final class StargazerModel: ObservableObject {
     @Published var bodies: [CelestialBody] = []
@@ -61,7 +67,7 @@ final class StargazerModel: ObservableObject {
     private var lastGeocodedCoordinate: CLLocationCoordinate2D?
     private var smoothedOverlays: [String: CGPoint] = [:]
     private var searchGuidanceComplete = false
-    private var lastSearchRelativeDegrees: Double?
+    private var lockedCoarseTurn: CoarseTurnDirection?
     private var lastProjectionViewport: CGSize = .zero
     private var lastScreenOffset: CGPoint = .zero
 
@@ -213,7 +219,7 @@ final class StargazerModel: ObservableObject {
     private func resetSearchGuidance() {
         searchGuidanceComplete = false
         searchInfoRevealed = false
-        lastSearchRelativeDegrees = nil
+        lockedCoarseTurn = nil
         searchArrow = SearchArrowState()
     }
 
@@ -281,7 +287,11 @@ final class StargazerModel: ObservableObject {
         return nil
     }
 
-    /// Geographic bearing to the body relative to where the phone is pointing (degrees, ±180).
+    /// Degrees off-target before we show a simple turn-left/right/around hint.
+    private static let fineGuidanceThresholdDegrees = 45.0
+    private static let turnAroundThresholdDegrees = 130.0
+    private static let coarseUnlockThresholdDegrees = 35.0
+
     private func compassRelativeBearingDegrees(to body: CelestialBody) -> Double? {
         guard let heading = currentHeading,
               let deviceHeading = compassHeadingDegrees(from: heading) else {
@@ -294,28 +304,25 @@ final class StargazerModel: ObservableObject {
         return relative
     }
 
-    private func smoothedCompassRelativeBearing(for body: CelestialBody) -> Double? {
-        guard let raw = compassRelativeBearingDegrees(to: body) else { return nil }
+    private func resolveCoarseTurn(relativeDegrees: Double) -> CoarseTurnDirection? {
+        let absRelative = abs(relativeDegrees)
 
-        guard let last = lastSearchRelativeDegrees else {
-            lastSearchRelativeDegrees = raw
-            return raw
+        if absRelative >= Self.turnAroundThresholdDegrees {
+            return .around
         }
 
-        var delta = raw - last
-        while delta > 180 { delta -= 360 }
-        while delta < -180 { delta += 360 }
+        if absRelative >= Self.fineGuidanceThresholdDegrees {
+            return relativeDegrees > 0 ? .right : .left
+        }
 
-        var next = last + delta * 0.28
-        while next > 180 { next -= 360 }
-        while next < -180 { next += 360 }
+        if let locked = lockedCoarseTurn, absRelative > Self.coarseUnlockThresholdDegrees {
+            return locked
+        }
 
-        lastSearchRelativeDegrees = next
-        return next
+        return nil
     }
 
-    /// Map compass bearing to a screen-edge point; arrow angle follows the bearing ray.
-    private func compassEdgePlacement(
+    private func fineGuidancePlacement(
         relativeDegrees: Double,
         in size: CGSize,
         margin: CGFloat = 44
@@ -326,11 +333,6 @@ final class StargazerModel: ObservableObject {
         let cx = size.width / 2
         let cy = size.height / 2
 
-        if abs(dx) < 0.001 && abs(dy) < 0.001 {
-            let point = CGPoint(x: cx, y: cy + max(size.height / 2 - margin, 1))
-            return (point, Double.pi / 2)
-        }
-
         let halfW = max(size.width / 2 - margin, 1)
         let halfH = max(size.height / 2 - margin, 1)
         let scaleX = dx != 0 ? abs(halfW / dx) : .infinity
@@ -338,6 +340,24 @@ final class StargazerModel: ObservableObject {
         let scale = min(scaleX, scaleY)
         let edgePoint = CGPoint(x: cx + dx * scale, y: cy + dy * scale)
         return (edgePoint, atan2(dy, dx))
+    }
+
+    private func coarseTurnPlacement(
+        _ turn: CoarseTurnDirection,
+        in size: CGSize,
+        margin: CGFloat = 48
+    ) -> (point: CGPoint, angle: Double) {
+        let cx = size.width / 2
+        let cy = size.height / 2
+
+        switch turn {
+        case .left:
+            return (CGPoint(x: margin, y: cy), 0)
+        case .right:
+            return (CGPoint(x: size.width - margin, y: cy), .pi)
+        case .around:
+            return (CGPoint(x: cx, y: size.height - margin), -.pi / 2)
+        }
     }
 
     private func project(
@@ -435,9 +455,10 @@ final class StargazerModel: ObservableObject {
         let size = viewportSize
         let centerX = size.width / 2
         let centerY = size.height / 2
-        let threshold = min(size.width, size.height) * 0.14
+        let arrivalThreshold = min(size.width, size.height) * 0.14
 
         if let target = bodyOverlays[bodyName], isOnScreen(target, in: size) {
+            lockedCoarseTurn = nil
             let distance = hypot(target.x - centerX, target.y - centerY)
             let placement = offsetArrowPlacement(
                 pointingTo: target,
@@ -449,7 +470,7 @@ final class StargazerModel: ObservableObject {
             searchArrow.angle = placement.angle
             searchArrow.mode = .onBody
 
-            if distance < threshold {
+            if distance < arrivalThreshold {
                 searchGuidanceComplete = true
                 searchInfoRevealed = true
                 searchArrow.isVisible = false
@@ -457,16 +478,25 @@ final class StargazerModel: ObservableObject {
             return
         }
 
-        guard let relativeDegrees = smoothedCompassRelativeBearing(for: body) else {
+        guard let relativeDegrees = compassRelativeBearingDegrees(to: body) else {
             searchArrow.isVisible = false
             return
         }
 
-        let edge = compassEdgePlacement(relativeDegrees: relativeDegrees, in: size)
+        let placement: (point: CGPoint, angle: Double)
+        if let coarseTurn = resolveCoarseTurn(relativeDegrees: relativeDegrees) {
+            lockedCoarseTurn = coarseTurn
+            placement = coarseTurnPlacement(coarseTurn, in: size)
+            searchArrow.mode = .edge
+        } else {
+            lockedCoarseTurn = nil
+            placement = fineGuidancePlacement(relativeDegrees: relativeDegrees, in: size)
+            searchArrow.mode = .edge
+        }
+
         searchArrow.isVisible = true
-        searchArrow.position = edge.point
-        searchArrow.angle = edge.angle
-        searchArrow.mode = .edge
+        searchArrow.position = placement.point
+        searchArrow.angle = placement.angle
     }
 
     private var lastViewMatrix: simd_float4x4 = matrix_identity_float4x4
