@@ -527,6 +527,8 @@ struct ContentView: View {
                 searchDebugLine("Arrow mode", debug.arrowMode)
                 searchDebugLine("Arrow visible", debug.arrowVisible)
                 searchDebugLine("Complete", debug.guidanceComplete)
+                searchDebugLine("Passed closest", debug.passedClosest)
+                searchDebugLine("Closest rel", debug.closestRelative)
             }
             .padding(10)
         }

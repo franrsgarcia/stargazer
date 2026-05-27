@@ -47,6 +47,8 @@ struct SearchGuidanceDebugInfo {
     var arrowMode: String = "—"
     var arrowVisible: String = "no"
     var guidanceComplete: String = "no"
+    var passedClosest: String = "no"
+    var closestRelative: String = "—"
 
     static let inactive = SearchGuidanceDebugInfo()
 }
@@ -99,6 +101,8 @@ final class StargazerModel: ObservableObject {
     private var smoothedOverlays: [String: CGPoint] = [:]
     private var searchGuidanceComplete = false
     private var searchPanDirection: CoarseTurnDirection?
+    private var searchClosestRelativeMagnitude: Double?
+    private var searchPassedClosestApproach = false
     private var smoothedSearchArrowPoint: CGPoint?
     private var smoothedSearchArrowAngle: Double?
     private var lastSelectedBodyCameraZ: Float?
@@ -267,6 +271,8 @@ final class StargazerModel: ObservableObject {
         searchGuidanceComplete = false
         searchInfoRevealed = false
         searchPanDirection = nil
+        searchClosestRelativeMagnitude = nil
+        searchPassedClosestApproach = false
         smoothedSearchArrowPoint = nil
         smoothedSearchArrowAngle = nil
         searchArrow = SearchArrowState()
@@ -346,6 +352,8 @@ final class StargazerModel: ObservableObject {
     private static let searchArrowSmoothingFactor: CGFloat = 0.26
     /// Treat targets slightly off-screen as close enough to point at directly.
     private static let searchOnScreenExpansion: CGFloat = 88
+    /// AR projections farther than this from center are treated as unreliable.
+    private static let searchProjectionMaxDistanceScale: CGFloat = 1.35
 
     private func compassRelativeBearingDegrees(to body: CelestialBody) -> Double? {
         guard let heading = currentHeading,
@@ -373,15 +381,33 @@ final class StargazerModel: ObservableObject {
     private func syncSearchPanDirection(
         relativeDegrees: Double?,
         projectedTarget: CGPoint?,
-        centerX: CGFloat
+        centerX: CGFloat,
+        viewportSize: CGSize
     ) {
         var candidate: CoarseTurnDirection?
 
         if let relativeDegrees, abs(relativeDegrees) >= 8 {
             candidate = compassSide(for: relativeDegrees)
         }
-        if let projectedTarget, let screenSide = screenSide(for: projectedTarget, centerX: centerX) {
-            candidate = screenSide
+        if let projectedTarget {
+            let center = CGPoint(x: centerX, y: viewportSize.height / 2)
+            let distance = hypot(projectedTarget.x - centerX, projectedTarget.y - center.y)
+            let maxDistance = max(viewportSize.width, viewportSize.height) * Self.searchProjectionMaxDistanceScale
+            let isExtreme = distance > maxDistance
+
+            if let screenSide = screenSide(for: projectedTarget, centerX: centerX) {
+                if isExtreme {
+                    // Ignore extreme same-side AR; trust it when it disagrees with compass.
+                    if let relativeDegrees, abs(relativeDegrees) >= 8 {
+                        let compassTurn = compassSide(for: relativeDegrees)
+                        if screenSide != compassTurn {
+                            candidate = screenSide
+                        }
+                    }
+                } else {
+                    candidate = screenSide
+                }
+            }
         }
 
         guard let candidate else { return }
@@ -392,6 +418,11 @@ final class StargazerModel: ObservableObject {
         }
 
         guard current != candidate else { return }
+
+        if searchPassedClosestApproach {
+            searchPanDirection = candidate
+            return
+        }
 
         if let relativeDegrees, abs(relativeDegrees) >= Self.panDirectionFlipDegrees {
             searchPanDirection = candidate
@@ -404,6 +435,76 @@ final class StargazerModel: ObservableObject {
                 searchPanDirection = candidate
             }
         }
+    }
+
+    private func updateClosestRelativeTracking(_ relativeDegrees: Double?) {
+        guard let relativeDegrees else { return }
+        let absRelative = abs(relativeDegrees)
+
+        if let closest = searchClosestRelativeMagnitude {
+            if absRelative + 2 < closest {
+                searchClosestRelativeMagnitude = absRelative
+                searchPassedClosestApproach = false
+            } else if closest < 85, absRelative > closest + 15 {
+                searchPassedClosestApproach = true
+            }
+        } else {
+            searchClosestRelativeMagnitude = absRelative
+        }
+    }
+
+    private func isExtremeOffScreenProjection(
+        _ target: CGPoint,
+        in size: CGSize,
+        center: CGPoint
+    ) -> Bool {
+        let distance = hypot(target.x - center.x, target.y - center.y)
+        let maxDistance = max(size.width, size.height) * Self.searchProjectionMaxDistanceScale
+        return distance > maxDistance
+    }
+
+    private func syntheticSideTarget(
+        _ side: CoarseTurnDirection,
+        in size: CGSize
+    ) -> CGPoint {
+        let cx = size.width / 2
+        let cy = size.height / 2
+        let offset: CGFloat = 800
+        return CGPoint(x: side == .right ? cx + offset : cx - offset, y: cy)
+    }
+
+    private func resolveAREdgeTarget(
+        rawTarget: CGPoint,
+        relativeDegrees: Double?,
+        in size: CGSize,
+        center: CGPoint
+    ) -> (target: CGPoint, branch: String) {
+        guard isExtremeOffScreenProjection(rawTarget, in: size, center: center) else {
+            return (rawTarget, "arEdge")
+        }
+
+        guard let relativeDegrees else {
+            return (rawTarget, "arEdgeExtreme")
+        }
+
+        let compassTurn = compassSide(for: relativeDegrees)
+        let arTurn: CoarseTurnDirection = rawTarget.x >= center.x ? .right : .left
+
+        if arTurn != compassTurn {
+            searchPanDirection = arTurn
+            return (rawTarget, "arEdgeExtreme")
+        }
+
+        if abs(relativeDegrees) < 90 || searchPassedClosestApproach {
+            let corrected: CoarseTurnDirection = compassTurn == .right ? .left : .right
+            searchPanDirection = corrected
+            return (
+                syntheticSideTarget(corrected, in: size),
+                "arEdgeMirrorFlip(\(corrected == .left ? "L" : "R"))"
+            )
+        }
+
+        return (rawTarget, "arEdgeExtreme")
     }
 
     private func shouldApplyFrontArcLock(
@@ -642,7 +743,9 @@ final class StargazerModel: ObservableObject {
         smoothedPlacement: (point: CGPoint, angle: Double)?,
         rawMode: SearchArrowMode?,
         arrowVisible: Bool,
-        guidanceComplete: Bool
+        guidanceComplete: Bool,
+        passedClosestApproach: Bool = false,
+        closestRelativeMagnitude: Double? = nil
     ) {
         guard showSearchDebug else { return }
 
@@ -679,7 +782,9 @@ final class StargazerModel: ObservableObject {
                 ?? String(format: "%+.0f°", searchArrow.angle * 180 / .pi),
             arrowMode: rawMode.map { $0 == .onBody ? "onBody" : "edge" } ?? (searchArrow.mode == .onBody ? "onBody" : "edge"),
             arrowVisible: arrowVisible ? "yes" : "no",
-            guidanceComplete: guidanceComplete ? "yes" : "no"
+            guidanceComplete: guidanceComplete ? "yes" : "no",
+            passedClosest: passedClosestApproach ? "yes" : "no",
+            closestRelative: closestRelativeMagnitude.map { String(format: "%.1f°", $0) } ?? "—"
         )
     }
 
@@ -701,6 +806,7 @@ final class StargazerModel: ObservableObject {
         let arrivalThreshold = min(size.width, size.height) * 0.16
         let projectedTarget = bodyOverlays[bodyName]
         let relativeDegrees = compassRelativeBearingDegrees(to: body)
+        updateClosestRelativeTracking(relativeDegrees)
 
         if searchGuidanceComplete {
             let strictOnScreen = projectedTarget.map { isOnScreen($0, in: size) } ?? false
@@ -722,7 +828,9 @@ final class StargazerModel: ObservableObject {
                 smoothedPlacement: (searchArrow.position, searchArrow.angle),
                 rawMode: searchArrow.mode,
                 arrowVisible: searchArrow.isVisible,
-                guidanceComplete: true
+                guidanceComplete: true,
+                passedClosestApproach: searchPassedClosestApproach,
+                closestRelativeMagnitude: searchClosestRelativeMagnitude
             )
             return
         }
@@ -730,7 +838,8 @@ final class StargazerModel: ObservableObject {
         syncSearchPanDirection(
             relativeDegrees: relativeDegrees,
             projectedTarget: projectedTarget,
-            centerX: centerX
+            centerX: centerX,
+            viewportSize: size
         )
 
         let rawPlacement: (point: CGPoint, angle: Double)
@@ -756,8 +865,14 @@ final class StargazerModel: ObservableObject {
                 shouldComplete = true
             }
         } else if let target = projectedTarget {
-            branch = "arEdge"
-            rawPlacement = edgeGuidancePlacement(toward: target, in: size, pointAtTarget: false)
+            let resolved = resolveAREdgeTarget(
+                rawTarget: target,
+                relativeDegrees: relativeDegrees,
+                in: size,
+                center: center
+            )
+            branch = resolved.branch
+            rawPlacement = edgeGuidancePlacement(toward: resolved.target, in: size, pointAtTarget: false)
             rawMode = .edge
         } else if let relativeDegrees {
             if let coarseTurn = resolveCoarseTurn(relativeDegrees: relativeDegrees) {
@@ -792,7 +907,9 @@ final class StargazerModel: ObservableObject {
                 smoothedPlacement: nil,
                 rawMode: nil,
                 arrowVisible: false,
-                guidanceComplete: false
+                guidanceComplete: false,
+                passedClosestApproach: searchPassedClosestApproach,
+                closestRelativeMagnitude: searchClosestRelativeMagnitude
             )
             return
         }
@@ -827,7 +944,9 @@ final class StargazerModel: ObservableObject {
             smoothedPlacement: placement,
             rawMode: rawMode,
             arrowVisible: !shouldComplete,
-            guidanceComplete: shouldComplete
+            guidanceComplete: shouldComplete,
+            passedClosestApproach: searchPassedClosestApproach,
+            closestRelativeMagnitude: searchClosestRelativeMagnitude
         )
 
         if shouldComplete {
