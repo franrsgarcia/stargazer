@@ -43,6 +43,7 @@ struct ContentView: View {
             }
         )) {
             Button("Got it", role: .cancel) {
+                performHapticTap()
                 hasSeenHorizonIntro = true
             }
         } message: {
@@ -174,7 +175,10 @@ struct ContentView: View {
     }
 
     private func bottomBarItem(title: String, systemImage: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        Button {
+            performHapticTap()
+            action()
+        } label: {
             bottomBarLabel(title: title, systemImage: systemImage)
                 .frame(maxWidth: .infinity, minHeight: 52)
                 .contentShape(Rectangle())
@@ -212,6 +216,7 @@ struct ContentView: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
+                        performHapticTap()
                         showVisibilitySheet = false
                     }
                 }
@@ -225,6 +230,9 @@ struct ContentView: View {
     private func visibilityRow(title: String, isOn: Binding<Bool>) -> some View {
         Toggle(title, isOn: isOn)
             .toggleStyle(.switch)
+            .onChange(of: isOn.wrappedValue) { _ in
+                performHapticSelection()
+            }
     }
 
     private var searchSheet: some View {
@@ -232,6 +240,7 @@ struct ContentView: View {
             List {
                 ForEach(filteredSearchNames, id: \.self) { name in
                     Button {
+                        performHapticTap()
                         model.selectFromSearch(named: name)
                         showSearchSheet = false
                         searchQuery = ""
@@ -256,6 +265,7 @@ struct ContentView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
+                        performHapticTap()
                         showSearchSheet = false
                     }
                 }
@@ -305,14 +315,19 @@ struct ContentView: View {
 
                 Spacer()
 
-                Button(action: { /* info page navigation placeholder */ }) {
+                Button {
+                    performHapticTap()
+                } label: {
                     Image(systemName: "info.circle")
                         .font(.body)
                         .foregroundColor(.white.opacity(0.9))
                         .padding(8)
                 }
 
-                Button(action: { model.clearSelection() }) {
+                Button {
+                    performHapticTap()
+                    model.clearSelection()
+                } label: {
                     Image(systemName: "xmark")
                         .font(.body)
                         .foregroundColor(.white.opacity(0.8))
@@ -479,6 +494,14 @@ struct ContentView: View {
         let generator = UIImpactFeedbackGenerator(style: .light)
         generator.prepare()
         generator.impactOccurred()
+#endif
+    }
+
+    private func performHapticSelection() {
+#if canImport(UIKit)
+        let generator = UISelectionFeedbackGenerator()
+        generator.prepare()
+        generator.selectionChanged()
 #endif
     }
 
