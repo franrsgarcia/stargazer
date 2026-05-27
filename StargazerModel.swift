@@ -22,6 +22,35 @@ struct SearchArrowState {
     var mode: SearchArrowMode = .edge
 }
 
+struct SearchGuidanceDebugInfo {
+    var isActive: Bool = false
+    var branch: String = "—"
+    var targetName: String = "—"
+    var panDirection: String = "—"
+    var compassHeading: String = "—"
+    var bodyAzimuth: String = "—"
+    var relativeBearing: String = "—"
+    var adjustedRelative: String = "—"
+    var frontArcLock: String = "no"
+    var hasAROverlay: String = "no"
+    var cameraZ: String = "—"
+    var targetXY: String = "—"
+    var targetOffsetX: String = "—"
+    var strictOnScreen: String = "no"
+    var expandedOnScreen: String = "no"
+    var centerDistance: String = "—"
+    var arrivalThreshold: String = "—"
+    var rawArrowXY: String = "—"
+    var rawAngleDeg: String = "—"
+    var smoothArrowXY: String = "—"
+    var smoothAngleDeg: String = "—"
+    var arrowMode: String = "—"
+    var arrowVisible: String = "no"
+    var guidanceComplete: String = "no"
+
+    static let inactive = SearchGuidanceDebugInfo()
+}
+
 struct CardinalMarker: Identifiable {
     var id: String { label }
     let label: String
@@ -57,6 +86,8 @@ final class StargazerModel: ObservableObject {
     @Published var selectedSetText: String?
     @Published var searchArrow = SearchArrowState()
     @Published var searchTargetReached = false
+    @Published var showSearchDebug = false
+    @Published private(set) var searchGuidanceDebug = SearchGuidanceDebugInfo.inactive
     @Published private(set) var searchInfoRevealed = false
     @Published var viewportSize: CGSize = UIScreen.main.bounds.size
     @Published var locationLabel = "Locating..."
@@ -70,6 +101,7 @@ final class StargazerModel: ObservableObject {
     private var searchPanDirection: CoarseTurnDirection?
     private var smoothedSearchArrowPoint: CGPoint?
     private var smoothedSearchArrowAngle: Double?
+    private var lastSelectedBodyCameraZ: Float?
     private var lastProjectionViewport: CGSize = .zero
     private var lastScreenOffset: CGPoint = .zero
 
@@ -218,6 +250,15 @@ final class StargazerModel: ObservableObject {
         futureTrajectorySegments = []
     }
 
+    func toggleSearchDebug() {
+        showSearchDebug.toggle()
+        if showSearchDebug {
+            updateSearchGuidance()
+        } else {
+            searchGuidanceDebug = .inactive
+        }
+    }
+
     func acknowledgeSearchTargetReached() {
         searchTargetReached = false
     }
@@ -230,6 +271,7 @@ final class StargazerModel: ObservableObject {
         smoothedSearchArrowAngle = nil
         searchArrow = SearchArrowState()
         searchTargetReached = false
+        searchGuidanceDebug = .inactive
     }
 
     private func selectBody(named name: String) {
@@ -569,8 +611,85 @@ final class StargazerModel: ObservableObject {
         return (point, angle)
     }
 
+    private func formatDegrees(_ value: Double?) -> String {
+        guard let value else { return "—" }
+        return String(format: "%+.1f°", value)
+    }
+
+    private func formatPoint(_ point: CGPoint?) -> String {
+        guard let point else { return "—" }
+        return String(format: "(%.0f, %.0f)", point.x, point.y)
+    }
+
+    private func formatFloat(_ value: Float?) -> String {
+        guard let value else { return "—" }
+        return String(format: "%.3f", value)
+    }
+
+    private func refreshSearchGuidanceDebug(
+        bodyName: String,
+        body: CelestialBody,
+        branch: String,
+        relativeDegrees: Double?,
+        adjustedRelative: Double?,
+        frontArcLockActive: Bool,
+        projectedTarget: CGPoint?,
+        strictOnScreen: Bool,
+        expandedOnScreen: Bool,
+        centerDistance: CGFloat?,
+        arrivalThreshold: CGFloat,
+        rawPlacement: (point: CGPoint, angle: Double)?,
+        smoothedPlacement: (point: CGPoint, angle: Double)?,
+        rawMode: SearchArrowMode?,
+        arrowVisible: Bool,
+        guidanceComplete: Bool
+    ) {
+        guard showSearchDebug else { return }
+
+        let centerX = viewportSize.width / 2
+        let heading = currentHeading.flatMap { compassHeadingDegrees(from: $0) }
+
+        var offsetX: String = "—"
+        if let projectedTarget {
+            offsetX = String(format: "%+.0f pt", projectedTarget.x - centerX)
+        }
+
+        searchGuidanceDebug = SearchGuidanceDebugInfo(
+            isActive: true,
+            branch: branch,
+            targetName: bodyName,
+            panDirection: searchPanDirection.map { $0 == .left ? "L" : "R" } ?? "—",
+            compassHeading: formatDegrees(heading),
+            bodyAzimuth: formatDegrees(body.azimuth),
+            relativeBearing: formatDegrees(relativeDegrees),
+            adjustedRelative: formatDegrees(adjustedRelative),
+            frontArcLock: frontArcLockActive ? "yes" : "no",
+            hasAROverlay: projectedTarget == nil ? "no" : "yes",
+            cameraZ: formatFloat(lastSelectedBodyCameraZ),
+            targetXY: formatPoint(projectedTarget),
+            targetOffsetX: offsetX,
+            strictOnScreen: strictOnScreen ? "yes" : "no",
+            expandedOnScreen: expandedOnScreen ? "yes" : "no",
+            centerDistance: centerDistance.map { String(format: "%.0f pt", $0) } ?? "—",
+            arrivalThreshold: String(format: "%.0f pt", arrivalThreshold),
+            rawArrowXY: rawPlacement.map { formatPoint($0.point) } ?? "—",
+            rawAngleDeg: rawPlacement.map { String(format: "%+.0f°", $0.angle * 180 / .pi) } ?? "—",
+            smoothArrowXY: smoothedPlacement.map { formatPoint($0.point) } ?? formatPoint(searchArrow.position),
+            smoothAngleDeg: smoothedPlacement.map { String(format: "%+.0f°", $0.angle * 180 / .pi) }
+                ?? String(format: "%+.0f°", searchArrow.angle * 180 / .pi),
+            arrowMode: rawMode.map { $0 == .onBody ? "onBody" : "edge" } ?? (searchArrow.mode == .onBody ? "onBody" : "edge"),
+            arrowVisible: arrowVisible ? "yes" : "no",
+            guidanceComplete: guidanceComplete ? "yes" : "no"
+        )
+    }
+
     func updateSearchGuidance() {
-        guard selectionSource == .search, !searchGuidanceComplete else { return }
+        guard selectionSource == .search else {
+            if showSearchDebug {
+                searchGuidanceDebug = .inactive
+            }
+            return
+        }
         guard let bodyName = selectedBodyName,
               let body = bodies.first(where: { $0.name == bodyName }),
               viewportSize.width > 0, viewportSize.height > 0 else { return }
@@ -580,19 +699,52 @@ final class StargazerModel: ObservableObject {
         let centerY = size.height / 2
         let center = CGPoint(x: centerX, y: centerY)
         let arrivalThreshold = min(size.width, size.height) * 0.16
+        let projectedTarget = bodyOverlays[bodyName]
+        let relativeDegrees = compassRelativeBearingDegrees(to: body)
+
+        if searchGuidanceComplete {
+            let strictOnScreen = projectedTarget.map { isOnScreen($0, in: size) } ?? false
+            let expandedOnScreen = projectedTarget.map { isOnScreen($0, in: size, margin: -Self.searchOnScreenExpansion) } ?? false
+            let centerDistance = projectedTarget.map { hypot($0.x - centerX, $0.y - centerY) }
+            refreshSearchGuidanceDebug(
+                bodyName: bodyName,
+                body: body,
+                branch: "complete",
+                relativeDegrees: relativeDegrees,
+                adjustedRelative: nil,
+                frontArcLockActive: false,
+                projectedTarget: projectedTarget,
+                strictOnScreen: strictOnScreen,
+                expandedOnScreen: expandedOnScreen,
+                centerDistance: centerDistance,
+                arrivalThreshold: arrivalThreshold,
+                rawPlacement: nil,
+                smoothedPlacement: (searchArrow.position, searchArrow.angle),
+                rawMode: searchArrow.mode,
+                arrowVisible: searchArrow.isVisible,
+                guidanceComplete: true
+            )
+            return
+        }
+
+        syncSearchPanDirection(
+            relativeDegrees: relativeDegrees,
+            projectedTarget: projectedTarget,
+            centerX: centerX
+        )
 
         let rawPlacement: (point: CGPoint, angle: Double)
         let rawMode: SearchArrowMode
         var shouldComplete = false
-        let relativeDegrees = compassRelativeBearingDegrees(to: body)
-        syncSearchPanDirection(
-            relativeDegrees: relativeDegrees,
-            projectedTarget: bodyOverlays[bodyName],
-            centerX: centerX
-        )
+        var branch = "hidden"
+        var adjustedRelative: Double?
 
-        if let target = bodyOverlays[bodyName],
-           isOnScreen(target, in: size, margin: -Self.searchOnScreenExpansion) {
+        let strictOnScreen = projectedTarget.map { isOnScreen($0, in: size) } ?? false
+        let expandedOnScreen = projectedTarget.map { isOnScreen($0, in: size, margin: -Self.searchOnScreenExpansion) } ?? false
+        let centerDistance = projectedTarget.map { hypot($0.x - centerX, $0.y - centerY) }
+
+        if let target = projectedTarget, expandedOnScreen {
+            branch = "onBody"
             let distance = hypot(target.x - centerX, target.y - centerY)
             rawPlacement = offsetArrowPlacement(
                 pointingTo: target,
@@ -603,32 +755,80 @@ final class StargazerModel: ObservableObject {
             if distance < arrivalThreshold {
                 shouldComplete = true
             }
-        } else {
+        } else if let target = projectedTarget {
+            branch = "arEdge"
+            rawPlacement = edgeGuidancePlacement(toward: target, in: size, pointAtTarget: false)
             rawMode = .edge
-            if let target = bodyOverlays[bodyName] {
-                rawPlacement = edgeGuidancePlacement(toward: target, in: size, pointAtTarget: false)
-            } else if let relativeDegrees {
-                if let coarseTurn = resolveCoarseTurn(relativeDegrees: relativeDegrees) {
-                    rawPlacement = coarseTurnPlacement(coarseTurn, in: size)
-                } else {
-                    let adjusted = panLockedRelativeDegrees(
-                        relativeDegrees,
-                        projectedTarget: bodyOverlays[bodyName],
-                        centerX: centerX
-                    )
-                    rawPlacement = fineGuidancePlacement(relativeDegrees: adjusted, in: size)
-                }
+        } else if let relativeDegrees {
+            if let coarseTurn = resolveCoarseTurn(relativeDegrees: relativeDegrees) {
+                branch = "compassCoarse(\(coarseTurn == .left ? "L" : "R"))"
+                rawPlacement = coarseTurnPlacement(coarseTurn, in: size)
+                rawMode = .edge
             } else {
-                searchArrow.isVisible = false
-                return
+                adjustedRelative = panLockedRelativeDegrees(
+                    relativeDegrees,
+                    projectedTarget: projectedTarget,
+                    centerX: centerX
+                )
+                branch = "compassFine"
+                rawPlacement = fineGuidancePlacement(relativeDegrees: adjustedRelative ?? relativeDegrees, in: size)
+                rawMode = .edge
             }
+        } else {
+            searchArrow.isVisible = false
+            refreshSearchGuidanceDebug(
+                bodyName: bodyName,
+                body: body,
+                branch: "hidden (no heading)",
+                relativeDegrees: nil,
+                adjustedRelative: nil,
+                frontArcLockActive: false,
+                projectedTarget: projectedTarget,
+                strictOnScreen: strictOnScreen,
+                expandedOnScreen: expandedOnScreen,
+                centerDistance: centerDistance,
+                arrivalThreshold: arrivalThreshold,
+                rawPlacement: nil,
+                smoothedPlacement: nil,
+                rawMode: nil,
+                arrowVisible: false,
+                guidanceComplete: false
+            )
+            return
         }
+
+        let frontArcLockActive = relativeDegrees.map {
+            shouldApplyFrontArcLock(
+                relativeDegrees: $0,
+                projectedTarget: projectedTarget,
+                centerX: centerX
+            )
+        } ?? false
 
         let placement = smoothSearchArrowPlacement(rawPlacement)
         searchArrow.isVisible = !shouldComplete
         searchArrow.position = placement.point
         searchArrow.angle = placement.angle
         searchArrow.mode = rawMode
+
+        refreshSearchGuidanceDebug(
+            bodyName: bodyName,
+            body: body,
+            branch: branch,
+            relativeDegrees: relativeDegrees,
+            adjustedRelative: adjustedRelative,
+            frontArcLockActive: frontArcLockActive,
+            projectedTarget: projectedTarget,
+            strictOnScreen: strictOnScreen,
+            expandedOnScreen: expandedOnScreen,
+            centerDistance: centerDistance,
+            arrivalThreshold: arrivalThreshold,
+            rawPlacement: rawPlacement,
+            smoothedPlacement: placement,
+            rawMode: rawMode,
+            arrowVisible: !shouldComplete,
+            guidanceComplete: shouldComplete
+        )
 
         if shouldComplete {
             if !searchGuidanceComplete {
@@ -745,6 +945,21 @@ final class StargazerModel: ObservableObject {
         lastProjectionMatrix = projectionMatrix
         lastProjectionViewport = projectionViewport
         lastScreenOffset = projectionOffset
+
+        lastSelectedBodyCameraZ = nil
+        if selectionSource == .search,
+           let bodyName = selectedBodyName,
+           let body = bodies.first(where: { $0.name == bodyName }),
+           let projection = project(
+               azimuth: body.azimuth,
+               altitude: body.altitude,
+               viewMatrix: viewMatrix,
+               projectionMatrix: projectionMatrix,
+               viewportSize: projectionViewport,
+               screenOffset: projectionOffset
+           ) {
+            lastSelectedBodyCameraZ = projection.cameraZ
+        }
 
         var overlays: [String: CGPoint] = [:]
 

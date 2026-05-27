@@ -30,6 +30,11 @@ struct ContentView: View {
                 .padding(.horizontal, 16)
                 .padding(.bottom, 8)
         }
+        .overlay(alignment: .topLeading) {
+            searchDebugOverlay
+                .padding(.leading, 12)
+                .padding(.top, 52)
+        }
         .overlay {
             searchGuidanceArrow
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -463,6 +468,87 @@ struct ContentView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
             .modifier(GlassChipModifier(cornerRadius: 8))
+    }
+
+    // MARK: - Search debug (temporary)
+
+    private var searchDebugOverlay: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                performHapticTap()
+                model.toggleSearchDebug()
+            } label: {
+                Text(model.showSearchDebug ? "DBG ▾" : "DBG")
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundColor(.black)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.orange.opacity(0.92), in: Capsule())
+            }
+            .buttonStyle(.plain)
+
+            if model.showSearchDebug {
+                searchDebugPanel
+            }
+        }
+    }
+
+    private var searchDebugPanel: some View {
+        let debug = model.searchGuidanceDebug
+
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 3) {
+                if !debug.isActive {
+                    Text("Start a search to populate values.")
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.75))
+                        .padding(.bottom, 4)
+                }
+                searchDebugLine("Branch", debug.branch)
+                searchDebugLine("Target", debug.targetName)
+                searchDebugLine("Pan lock", debug.panDirection)
+                searchDebugLine("Heading", debug.compassHeading)
+                searchDebugLine("Body az", debug.bodyAzimuth)
+                searchDebugLine("Relative", debug.relativeBearing)
+                searchDebugLine("Adj relative", debug.adjustedRelative)
+                searchDebugLine("Front lock", debug.frontArcLock)
+                searchDebugLine("AR overlay", debug.hasAROverlay)
+                searchDebugLine("Camera Z", debug.cameraZ)
+                searchDebugLine("Target xy", debug.targetXY)
+                searchDebugLine("Target Δx", debug.targetOffsetX)
+                searchDebugLine("On screen", debug.strictOnScreen)
+                searchDebugLine("Expanded", debug.expandedOnScreen)
+                searchDebugLine("Dist center", debug.centerDistance)
+                searchDebugLine("Arrival", debug.arrivalThreshold)
+                searchDebugLine("Raw arrow", debug.rawArrowXY)
+                searchDebugLine("Raw angle", debug.rawAngleDeg)
+                searchDebugLine("Smooth arrow", debug.smoothArrowXY)
+                searchDebugLine("Smooth angle", debug.smoothAngleDeg)
+                searchDebugLine("Arrow mode", debug.arrowMode)
+                searchDebugLine("Arrow visible", debug.arrowVisible)
+                searchDebugLine("Complete", debug.guidanceComplete)
+            }
+            .padding(10)
+        }
+        .frame(maxWidth: 220, maxHeight: 340)
+        .background(Color.black.opacity(0.78), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.orange.opacity(0.55), lineWidth: 1)
+        )
+    }
+
+    private func searchDebugLine(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Text(label + ":")
+                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                .foregroundColor(.orange.opacity(0.85))
+                .frame(width: 72, alignment: .leading)
+            Text(value)
+                .font(.system(size: 9, weight: .regular, design: .monospaced))
+                .foregroundColor(.white)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     @ViewBuilder
