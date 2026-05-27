@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 struct ContentView: View {
     @EnvironmentObject private var model: StargazerModel
@@ -78,6 +81,7 @@ struct ContentView: View {
                     bodyMarker(for: body, isSelected: isSelected)
                         .position(point)
                         .onTapGesture {
+                            performHapticTap()
                             model.toggleSelection(of: body)
                         }
 
@@ -222,6 +226,7 @@ struct ContentView: View {
             List {
                 ForEach(filteredSearchNames, id: \.self) { name in
                     Button {
+                        performHapticSearchFound()
                         model.selectFromSearch(named: name)
                         showSearchSheet = false
                         searchQuery = ""
@@ -462,6 +467,26 @@ struct ContentView: View {
             .padding(.vertical, 2)
             .background(marker.isNorth ? Color.red : Color.white.opacity(0.92))
             .cornerRadius(3)
+    }
+
+    private func performHapticTap() {
+#if canImport(UIKit)
+        let generator = UIImpactFeedbackGenerator(style: .light)
+        generator.prepare()
+        generator.impactOccurred()
+#endif
+    }
+
+    private func performHapticSearchFound() {
+#if canImport(UIKit)
+        let generator = UINotificationFeedbackGenerator()
+        generator.prepare()
+        generator.notificationOccurred(.success)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            let secondGenerator = UINotificationFeedbackGenerator()
+            secondGenerator.notificationOccurred(.success)
+        }
+#endif
     }
 
     private func smoothPath(from pts: [CGPoint]) -> Path {
