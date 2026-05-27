@@ -54,6 +54,12 @@ struct ContentView: View {
         .sheet(isPresented: $showVisibilitySheet) {
             visibilitySheet
         }
+        .onChange(of: model.searchTargetReached) { reached in
+            if reached {
+                performHapticSearchFound()
+                model.acknowledgeSearchTargetReached()
+            }
+        }
     }
 
     private var bottomChrome: some View {
@@ -226,7 +232,6 @@ struct ContentView: View {
             List {
                 ForEach(filteredSearchNames, id: \.self) { name in
                     Button {
-                        performHapticSearchFound()
                         model.selectFromSearch(named: name)
                         showSearchSheet = false
                         searchQuery = ""

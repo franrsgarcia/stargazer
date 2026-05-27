@@ -56,6 +56,7 @@ final class StargazerModel: ObservableObject {
     @Published var selectedRiseText: String?
     @Published var selectedSetText: String?
     @Published var searchArrow = SearchArrowState()
+    @Published var searchTargetReached = false
     @Published private(set) var searchInfoRevealed = false
     @Published var viewportSize: CGSize = UIScreen.main.bounds.size
     @Published var locationLabel = "Locating..."
@@ -217,6 +218,10 @@ final class StargazerModel: ObservableObject {
         futureTrajectorySegments = []
     }
 
+    func acknowledgeSearchTargetReached() {
+        searchTargetReached = false
+    }
+
     private func resetSearchGuidance() {
         searchGuidanceComplete = false
         searchInfoRevealed = false
@@ -224,6 +229,7 @@ final class StargazerModel: ObservableObject {
         smoothedSearchArrowPoint = nil
         smoothedSearchArrowAngle = nil
         searchArrow = SearchArrowState()
+        searchTargetReached = false
     }
 
     private func selectBody(named name: String) {
@@ -317,16 +323,27 @@ final class StargazerModel: ObservableObject {
     ) {
         guard searchPanDirection == nil else { return }
         if let projectedTarget {
-            searchPanDirection = projectedTarget.x >= centerX ? .right : .left
-        } else if let relativeDegrees {
+            let offset = projectedTarget.x - centerX
+            let horizontalThreshold = max(24, centerX * 0.08)
+            guard abs(offset) >= horizontalThreshold else { return }
+            searchPanDirection = offset >= 0 ? .right : .left
+        } else if let relativeDegrees, abs(relativeDegrees) >= 6 {
             searchPanDirection = relativeDegrees >= 0 ? .right : .left
         }
     }
 
     private func updateSearchPanDirection(relativeDegrees: Double) {
-        if abs(relativeDegrees) >= Self.fineGuidanceThresholdDegrees {
-            searchPanDirection = relativeDegrees > 0 ? .right : .left
+        let candidate: CoarseTurnDirection = relativeDegrees > 0 ? .right : .left
+        guard abs(relativeDegrees) >= Self.fineGuidanceThresholdDegrees else { return }
+
+        if let current = searchPanDirection, current != candidate {
+            if abs(relativeDegrees) >= 100 {
+                searchPanDirection = candidate
+            }
+            return
         }
+
+        searchPanDirection = candidate
     }
 
     private func panLockedRelativeDegrees(_ relativeDegrees: Double) -> Double {
@@ -610,6 +627,9 @@ final class StargazerModel: ObservableObject {
         searchArrow.mode = rawMode
 
         if shouldComplete {
+            if !searchGuidanceComplete {
+                searchTargetReached = true
+            }
             searchGuidanceComplete = true
             searchInfoRevealed = true
         }
